@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum Role {
+  Owner
+  Admin
+  Member
+  Viewer
+}
+
+enum TaskStatus {
+  Todo
+  InProgress
+  Review
+  Completed
+}
+
+enum TaskPriority {
+  Urgent
+  High
+  Medium
+  Low
+}
+
+enum ProjectStatus {
+  Active
+  OnHold
+  Completed
+}
+
+enum TransitionMode {
+  Default
+  Custom
+}
+
+enum ActivityEventType {
+  TaskCreated
+  TaskUpdated
+  StatusChanged
+  TaskCompleted
+  CommentAdded
+  AttachmentAdded
+  MemberJoined
+  MemberRemoved
+  MeetingRequested
+  MeetingAccepted
+  MeetingDeclined
+}
+
+enum MeetingStatus {
+  Pending
+  Accepted
+  Declined
+  Cancelled
+}
+
+enum ParticipantStatus {
+  Pending
+  Accepted
+  Declined
+}
+
+// ----------------------------------------------------------------------------
+// MODELS
+// ----------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(uuid())
+  fullName      String
+  email         String   @unique
+  password      String?
+  avatarUrl     String?
+  isGoogleAuth  Boolean  @default(false)
+  refreshToken  String?
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ownedWorkspaces      Workspace[]
+  workspaceMembers     WorkspaceMember[]
+  projectMembers       ProjectMember[]
+  assignedTasks        Task[]
+  assignedSubTasks     SubTask[]
+  comments             Comment[]
+  attachments          Attachment[]
+  notifications        Notification[]
+  meetingRequests      MeetingRequest[]
+  meetingParticipants  MeetingParticipant[]
+  calendarBlocks       CalendarBlock[]
+  notificationPref     NotificationPreference?
+  pushSubscription     PushSubscription?
+  passwordResetTokens  PasswordResetToken[]
+}
+
+model Workspace {
+  id         String   @id @default(uuid())
+  name       String
+  slug       String   @unique
+  logoUrl    String?
+  isArchived Boolean  @default(false)
+  isInviteOnly       Boolean  @default(false)
+  emailNotifications Boolean  @default(true)
+  ownerId    String
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  members         WorkspaceMember[]
+  projects        Project[]
+  meetingRequests MeetingRequest[]
+  invites         Invite[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        Role
+  onLeave     Boolean   @default(false)
+  joinedAt    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, workspaceId])
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(Active)
+  isArchived  Boolean       @default(false)
+  isPublic          Boolean       @default(false)
+  realtimeUpdates   Boolean       @default(true)
+  transitionMode    TransitionMode @default(Default)
+  customTransitions Json?
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members         ProjectMember[]
+  tasks           Task[]
+  activities      ActivityEvent[]
+  meetingRequests MeetingRequest[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      Role
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, projectId])
+}
+
+model Task {
+  id           String       @id @default(uuid())
+  title        String
+  description  String?
+  status       TaskStatus   @default(Todo)
+  priority     TaskPriority @default(Medium)
+  dueDate      DateTime?
+  startTime    DateTime?
+  endTime      DateTime?
+  sortOrder    Int?
+  label        String?
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assigneeId   String?
+  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  parentTaskId String?
+  parentTask   Task?        @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  reminderSent Boolean      @default(false)
+  version      Int          @default(1)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  subTasks       Task[]          @relation("SubTasks")
+  checklistItems SubTask[]
+  comments       Comment[]
+  attachments    Attachment[]
+  activities     ActivityEvent[]
+  calendarBlocks CalendarBlock[]
+
+  @@index([projectId, status])
+  @@index([dueDate])
+}
+
+model SubTask {
+  id           String    @id @default(uuid())
+  title        String
+  isDone       Boolean   @default(false)
+  assigneeId   String?
+  assignee     User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  dueDate      DateTime?
+  description  String?
+  parentTaskId String
+  parentTask   Task      @relation(fields: [parentTaskId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Comment {
+  id              String   @id @default(uuid())
+  body            String
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentCommentId String?
+  parentComment   Comment? @relation("ThreadedComments", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  replies Comment[] @relation("ThreadedComments")
+}
+
+model Attachment {
+  id         String   @id @default(uuid())
+  fileName   String
+  storageKey String
+  fileSize   Int
+  mimeType   String
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model ActivityEvent {
+  id        String            @id @default(uuid())
+  eventType ActivityEventType
+  actorId   String
+  projectId String
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  metadata  Json?
+  createdAt DateTime          @default(now())
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  recipientId String
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  type        String
+  message     String
+  isRead      Boolean  @default(false)
+  isDismissed Boolean  @default(false)
+  referenceId String?
+  createdAt   DateTime @default(now())
+}
+
+model NotificationPreference {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled Boolean  @default(true)
+  pushEnabled  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String
+  auth      String
+  p256dh    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MeetingRequest {
+  id            String        @id @default(uuid())
+  requesterId   String
+  requester     User          @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  workspaceId   String
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  agenda        String?
+  startDatetime DateTime
+  endDatetime   DateTime
+  status        MeetingStatus @default(Pending)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  participants    MeetingParticipant[]
+  calendarBlocks  CalendarBlock[]
+}
+
+model MeetingParticipant {
+  id               String            @id @default(uuid())
+  meetingRequestId String
+  meetingRequest   MeetingRequest    @relation(fields: [meetingRequestId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status           ParticipantStatus @default(Pending)
+  respondedAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([meetingRequestId, userId])
+}
+
+model CalendarBlock {
+  id            String   @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId           String?
+  task             Task?           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  meetingRequestId String?
+  meetingRequest   MeetingRequest? @relation(fields: [meetingRequestId], references: [id], onDelete: Cascade)
+  startDatetime    DateTime
+  endDatetime   DateTime
+  label         String
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Invite {
+  id          String    @id @default(uuid())
+  email       String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        Role
+  token       String    @unique
+  isUsed      Boolean   @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
