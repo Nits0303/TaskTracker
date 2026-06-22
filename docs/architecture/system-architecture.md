@@ -7,9 +7,23 @@ their communication patterns, and how they are containerized in Docker.
 
 ```mermaid
 graph TD
+
+    classDef frontend fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    classDef backend fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    classDef database fill:#10b981,stroke:#059669,color:#fff
+    classDef queue fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef cache fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
+
+    class Browser,Web frontend
+    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class PostgreSQL,Pg,DbWrite database
+    class Redis,SocketAdapter,RateLimit,Presence,Cache cache
+    class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue
+    class MinIO,Minio storage
     Browser["Browser (Next.js 15)"]
-    Browser -->|REST API calls (Axios + JWT Bearer)| API["NestJS API Server"]
-    Browser -->|WebSocket connection (Socket.IO client)| API
+    Browser -->|REST API| API["NestJS API Server"]
+    Browser -->|WebSocket| API
     
     subgraph API ["NestJS API Server"]
         Auth["Auth Module (JWT + Google OAuth + Passport)"]
@@ -53,6 +67,20 @@ graph TD
 
 ```mermaid
 graph LR
+
+    classDef frontend fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    classDef backend fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    classDef database fill:#10b981,stroke:#059669,color:#fff
+    classDef queue fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef cache fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
+
+    class Browser,Web frontend
+    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class PostgreSQL,Pg,DbWrite database
+    class Redis,SocketAdapter,RateLimit,Presence,Cache cache
+    class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue
+    class MinIO,Minio storage
     subgraph DockerNetwork ["Docker Network: task-tracker-network"]
         Web["web (Next.js) :3000"]
         Api["api (NestJS) :3001"]
@@ -64,7 +92,7 @@ graph LR
         Api --> Pg
         Api --> Redis
         Api --> Minio
-        Api -->|healthcheck on /health| Api
+        Api -->|healthcheck| Api
     end
 ```
 
@@ -72,6 +100,20 @@ graph LR
 
 ```mermaid
 graph LR
+
+    classDef frontend fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    classDef backend fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    classDef database fill:#10b981,stroke:#059669,color:#fff
+    classDef queue fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef cache fill:#ef4444,stroke:#dc2626,color:#fff
+    classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
+
+    class Browser,Web frontend
+    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class PostgreSQL,Pg,DbWrite database
+    class Redis,SocketAdapter,RateLimit,Presence,Cache cache
+    class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue
+    class MinIO,Minio storage
     Action["User Action (e.g. drag task to new column)"]
     ZustandOpt["Frontend optimistic update (Zustand store)"]
     Rest["REST API call (PATCH /tasks/:id)"]

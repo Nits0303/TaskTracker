@@ -1,12 +1,14 @@
 # Entity Relationship Diagrams
 
 The database schema is split into seven domain-specific diagrams for clarity. 
-All diagrams use Mermaid `erDiagram` syntax. Primary keys are marked `PK`, 
+All diagrams use Mermaid `%%{init: {'theme': 'dark'}}%%
+erDiagram` syntax. Primary keys are marked `PK`, 
 foreign keys are marked `FK`, and nullable fields are marked with a `?` suffix.
 
 ## Domain 1 — Auth & Users
 
 ```mermaid
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     User ||--o| NotificationPreference : has
     User ||--o| PushSubscription : has
@@ -24,12 +26,12 @@ erDiagram
         String id PK
         String fullName
         String email
-        String password?
-        String avatarUrl?
+        String password "nullable"
+        String avatarUrl "nullable"
         Boolean isGoogleAuth
-        String refreshToken?
+        String refreshToken "nullable"
         Boolean emailVerified
-        DateTime lastSeenAt?
+        DateTime lastSeenAt "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -66,6 +68,7 @@ erDiagram
 
 ```mermaid
 %% Role enum: Owner, Admin, Member, Viewer
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Workspace ||--o{ WorkspaceMember : has
     User ||--o{ WorkspaceMember : belongs_to
@@ -73,7 +76,7 @@ erDiagram
         String id PK
         String name
         String slug
-        String logoUrl?
+        String logoUrl "nullable"
         Boolean isArchived
         Boolean isInviteOnly
         Boolean emailNotifications
@@ -101,6 +104,7 @@ erDiagram
 ```mermaid
 %% ProjectStatus enum: Active, OnHold, Completed
 %% TransitionMode enum: Default, Custom
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Workspace ||--o{ Project : has
     Project ||--o{ ProjectMember : has
@@ -114,17 +118,17 @@ erDiagram
     Project {
         String id PK
         String name
-        String description?
+        String description "nullable"
         ProjectStatus status
         Boolean isArchived
         Boolean isPublic
         Boolean realtimeUpdates
         TransitionMode transitionMode
-        Json customTransitions?
+        Json customTransitions "nullable"
         String workspaceId FK
         DateTime createdAt
         DateTime updatedAt
-        Unsupported searchVector?
+        Unsupported searchVector "nullable"
     }
     ProjectMember {
         String id PK
@@ -142,6 +146,7 @@ erDiagram
 ```mermaid
 %% TaskStatus enum: Todo, InProgress, Review, Completed
 %% TaskPriority enum: Urgent, High, Medium, Low
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Project ||--o{ Task : has
     Task ||--o{ Task : subtasks
@@ -162,41 +167,41 @@ erDiagram
     Task {
         String id PK
         String title
-        String description?
+        String description "nullable"
         TaskStatus status
         TaskPriority priority
-        DateTime dueDate?
-        DateTime startTime?
-        DateTime endTime?
-        Int sortOrder?
-        String label?
+        DateTime dueDate "nullable"
+        DateTime startTime "nullable"
+        DateTime endTime "nullable"
+        Int sortOrder "nullable"
+        String label "nullable"
         String projectId FK
-        String assigneeId? FK
-        String parentTaskId? FK
+        String assigneeId "nullable" FK
+        String parentTaskId "nullable" FK
         Boolean reminderSent
         Int version
         DateTime createdAt
         DateTime updatedAt
-        Unsupported searchVector?
+        Unsupported searchVector "nullable"
     }
     SubTask {
         String id PK
         String title
         Boolean isDone
-        String assigneeId? FK
-        DateTime dueDate?
-        String description?
+        String assigneeId "nullable" FK
+        DateTime dueDate "nullable"
+        String description "nullable"
         String parentTaskId FK
         DateTime createdAt
         DateTime updatedAt
-        Unsupported searchVector?
+        Unsupported searchVector "nullable"
     }
     Comment {
         String id PK
         String body
         String taskId FK
         String authorId FK
-        String parentCommentId? FK
+        String parentCommentId "nullable" FK
         DateTime createdAt
         DateTime updatedAt
     }
@@ -213,12 +218,12 @@ erDiagram
     CalendarBlock {
         String id PK
         String userId FK
-        String taskId? FK
-        String meetingRequestId? FK
+        String taskId "nullable" FK
+        String meetingRequestId "nullable" FK
         DateTime startDatetime
         DateTime endDatetime
         String label
-        String description?
+        String description "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -228,6 +233,7 @@ erDiagram
 
 ```mermaid
 %% ChannelType enum: Project, Direct
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Workspace ||--o{ Channel : has
     Project ||--o{ Channel : has
@@ -249,13 +255,13 @@ erDiagram
     Channel {
         String id PK
         String name
-        String description?
+        String description "nullable"
         Boolean isPrivate
         ChannelType type
         String workspaceId FK
-        String projectId? FK
-        String participant1Id?
-        String participant2Id?
+        String projectId "nullable" FK
+        String participant1Id "nullable"
+        String participant2Id "nullable"
         String creatorId FK
         DateTime createdAt
         DateTime updatedAt
@@ -265,7 +271,7 @@ erDiagram
         String userId FK
         String channelId FK
         DateTime joinedAt
-        String lastReadMessageId? FK
+        String lastReadMessageId "nullable" FK
     }
     Message {
         String id PK
@@ -274,8 +280,8 @@ erDiagram
         Boolean isDeleted
         String channelId FK
         String authorId FK
-        String parentMessageId? FK
-        Json mentions?
+        String parentMessageId "nullable" FK
+        Json mentions "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -293,7 +299,7 @@ erDiagram
         String id PK
         String userId FK
         String channelId FK
-        DateTime mutedUntil?
+        DateTime mutedUntil "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -301,7 +307,7 @@ erDiagram
         String id PK
         String userId FK
         String projectId FK
-        DateTime mutedUntil?
+        DateTime mutedUntil "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -312,6 +318,7 @@ erDiagram
 ```mermaid
 %% MeetingStatus enum: Pending, Accepted, Declined, Cancelled
 %% ParticipantStatus enum: Pending, Accepted, Declined
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Workspace ||--o{ MeetingRequest : has
     Project ||--o{ MeetingRequest : has
@@ -325,9 +332,9 @@ erDiagram
         String id PK
         String requesterId FK
         String workspaceId FK
-        String projectId? FK
+        String projectId "nullable" FK
         String title
-        String agenda?
+        String agenda "nullable"
         DateTime startDatetime
         DateTime endDatetime
         MeetingStatus status
@@ -339,7 +346,7 @@ erDiagram
         String meetingRequestId FK
         String userId FK
         ParticipantStatus status
-        DateTime respondedAt?
+        DateTime respondedAt "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -350,6 +357,7 @@ erDiagram
 ```mermaid
 %% ActivityEventType enum: TaskCreated, TaskUpdated, StatusChanged, TaskCompleted, CommentAdded, AttachmentAdded, MemberJoined, MemberRemoved, MeetingRequested, MeetingAccepted, MeetingDeclined
 %% AuditEventType enum: LOGIN_SUCCESS, LOGOUT, BRUTE_FORCE_DETECTED, RATE_LIMIT_VIOLATION, WORKSPACE_CREATED, WORKSPACE_UPDATED, WORKSPACE_ARCHIVED, WORKSPACE_DELETED, WORKSPACE_SETTINGS_CHANGED, WORKSPACE_MEMBER_INVITED, WORKSPACE_MEMBER_REMOVED, WORKSPACE_MEMBER_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_DELETED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, TASK_CREATED, TASK_DELETED, TASK_STATUS_CHANGED, TASK_ASSIGNEE_CHANGED, TASK_DESCRIPTION_CHANGED, TASK_DUE_DATE_CHANGED, SUBTASK_CREATED, SUBTASK_ASSIGNED, COMMENT_ADDED, COMMENT_DELETED_BY_ADMIN, ATTACHMENT_UPLOADED, ATTACHMENT_DELETED, MEETING_REQUESTED, PROJECT_SETTINGS_CHANGED, PROJECT_MEMBER_ROLE_CHANGED
+%%{init: {'theme': 'dark'}}%%
 erDiagram
     Project ||--o{ ActivityEvent : has
     Task ||--o{ ActivityEvent : has
@@ -365,8 +373,8 @@ erDiagram
         ActivityEventType eventType
         String actorId FK
         String projectId FK
-        String taskId? FK
-        Json metadata?
+        String taskId "nullable" FK
+        Json metadata "nullable"
         DateTime createdAt
     }
     Notification {
@@ -376,21 +384,21 @@ erDiagram
         String message
         Boolean isRead
         Boolean isDismissed
-        String referenceId?
+        String referenceId "nullable"
         DateTime createdAt
     }
     AuditLog {
         String id PK
-        String workspaceId? FK
-        String actorId? FK
-        String actorEmail?
-        String actorRole?
+        String workspaceId "nullable" FK
+        String actorId "nullable" FK
+        String actorEmail "nullable"
+        String actorRole "nullable"
         AuditEventType event
-        String resourceType?
-        String resourceId?
-        String resourceName?
-        Json metadata?
-        String ipAddress?
+        String resourceType "nullable"
+        String resourceId "nullable"
+        String resourceName "nullable"
+        Json metadata "nullable"
+        String ipAddress "nullable"
         DateTime createdAt
     }
 ```
