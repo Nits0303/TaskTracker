@@ -71,6 +71,7 @@ export class WorkloadService {
         avatarInitials: this.getAvatarInitials(m.user.fullName),
         role: m.role,
         status: m.onLeave ? 'OnLeave' : 'Active',
+        lastSeenAt: m.user.lastSeenAt,
         tasksAssigned: totalTasks,
         completedTasks,
         timeSlotsBooked: slotsBooked,
@@ -85,6 +86,7 @@ export class WorkloadService {
         avatarInitials: this.getAvatarInitials(m.user.fullName),
         role: m.role,
         status: m.onLeave ? 'OnLeave' : 'Active',
+        lastSeenAt: m.user.lastSeenAt,
         tasksAssigned: totalTasks,
         timeSlotsBooked: slotsBooked,
       };
@@ -154,6 +156,7 @@ export class WorkloadService {
         avatarInitials: this.getAvatarInitials(m.user.fullName),
         role: m.role,
         status: m.onLeave ? 'OnLeave' : 'Active',
+        lastSeenAt: m.user.lastSeenAt,
         tasksAssigned: totalTasks,
         completedTasks,
         timeSlotsBooked: slotsBooked,
@@ -168,6 +171,7 @@ export class WorkloadService {
         avatarInitials: this.getAvatarInitials(m.user.fullName),
         role: m.role,
         status: m.onLeave ? 'OnLeave' : 'Active',
+        lastSeenAt: m.user.lastSeenAt,
         tasksAssigned: totalTasks,
         timeSlotsBooked: slotsBooked,
       };

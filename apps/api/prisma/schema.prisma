@@ -70,55 +70,70 @@ enum ParticipantStatus {
   Declined
 }
 
+enum ChannelType {
+  Project
+  Direct
+}
+
 // ----------------------------------------------------------------------------
 // MODELS
 // ----------------------------------------------------------------------------
 
 model User {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   fullName      String
-  email         String   @unique
+  email         String    @unique
   password      String?
   avatarUrl     String?
-  isGoogleAuth  Boolean  @default(false)
+  isGoogleAuth  Boolean   @default(false)
   refreshToken  String?
-  emailVerified Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  emailVerified Boolean   @default(false)
+  lastSeenAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  ownedWorkspaces      Workspace[]
-  workspaceMembers     WorkspaceMember[]
-  projectMembers       ProjectMember[]
-  assignedTasks        Task[]
-  assignedSubTasks     SubTask[]
-  comments             Comment[]
-  attachments          Attachment[]
-  notifications        Notification[]
-  meetingRequests      MeetingRequest[]
-  meetingParticipants  MeetingParticipant[]
-  calendarBlocks       CalendarBlock[]
-  notificationPref     NotificationPreference?
-  pushSubscription     PushSubscription?
-  passwordResetTokens  PasswordResetToken[]
+  ownedWorkspaces     Workspace[]
+  workspaceMembers    WorkspaceMember[]
+  projectMembers      ProjectMember[]
+  assignedTasks       Task[]
+  assignedSubTasks    SubTask[]
+  comments            Comment[]
+  attachments         Attachment[]
+  notifications       Notification[]
+  meetingRequests     MeetingRequest[]
+  meetingParticipants MeetingParticipant[]
+  calendarBlocks      CalendarBlock[]
+  notificationPref    NotificationPreference?
+  pushSubscription    PushSubscription?
+  passwordResetTokens PasswordResetToken[]
+  createdChannels     Channel[]
+  channelMemberships  ChannelMember[]
+  messages            Message[]
+  messageAttachments  MessageAttachment[]
+  channelMutes        ChannelMute[]
+  projectChatMutes    ProjectChatMute[]
+  auditLogs           AuditLog[]
 }
 
 model Workspace {
-  id         String   @id @default(uuid())
-  name       String
-  slug       String   @unique
-  logoUrl    String?
-  isArchived Boolean  @default(false)
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  logoUrl            String?
+  isArchived         Boolean  @default(false)
   isInviteOnly       Boolean  @default(false)
   emailNotifications Boolean  @default(true)
-  ownerId    String
-  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  ownerId            String
+  owner              User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   members         WorkspaceMember[]
   projects        Project[]
   meetingRequests MeetingRequest[]
   invites         Invite[]
+  channels        Channel[]
+  auditLogs       AuditLog[]
 }
 
 model WorkspaceMember {
@@ -137,24 +152,27 @@ model WorkspaceMember {
 }
 
 model Project {
-  id          String        @id @default(uuid())
-  name        String
-  description String?
-  status      ProjectStatus @default(Active)
-  isArchived  Boolean       @default(false)
-  isPublic          Boolean       @default(false)
-  realtimeUpdates   Boolean       @default(true)
+  id                String         @id @default(uuid())
+  name              String
+  description       String?
+  status            ProjectStatus  @default(Active)
+  isArchived        Boolean        @default(false)
+  isPublic          Boolean        @default(false)
+  realtimeUpdates   Boolean        @default(true)
   transitionMode    TransitionMode @default(Default)
   customTransitions Json?
-  workspaceId String
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  workspaceId       String
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  members         ProjectMember[]
-  tasks           Task[]
-  activities      ActivityEvent[]
-  meetingRequests MeetingRequest[]
+  members          ProjectMember[]
+  tasks            Task[]
+  activities       ActivityEvent[]
+  meetingRequests  MeetingRequest[]
+  channels         Channel[]
+  projectChatMutes ProjectChatMute[]
+  searchVector     Unsupported("tsvector")?
 }
 
 model ProjectMember {
@@ -202,6 +220,7 @@ model Task {
 
   @@index([projectId, status])
   @@index([dueDate])
+  searchVector Unsupported("tsvector")?
 }
 
 model SubTask {
@@ -216,6 +235,7 @@ model SubTask {
   parentTask   Task      @relation(fields: [parentTaskId], references: [id], onDelete: Cascade)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  searchVector Unsupported("tsvector")?
 }
 
 model Comment {
@@ -271,13 +291,29 @@ model Notification {
 }
 
 model NotificationPreference {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  emailEnabled Boolean  @default(true)
-  pushEnabled  Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  emailEnabled         Boolean  @default(true)
+  pushEnabled          Boolean  @default(false)
+
+  // Granular Email
+  emailTaskAssignments Boolean  @default(true)
+  emailMentions        Boolean  @default(true)
+  emailTaskDeadlines   Boolean  @default(true)
+
+  // Granular In-App
+  inAppTaskAssignments Boolean  @default(true)
+  inAppMentions        Boolean  @default(true)
+  inAppTaskDeadlines   Boolean  @default(true)
+  inAppTaskUpdates     Boolean  @default(true)
+  inAppCalendarEvents  Boolean  @default(true)
+  inAppMemberJoined    Boolean  @default(true)
+  inAppDirectMessages  Boolean  @default(true)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 model PushSubscription {
@@ -307,8 +343,8 @@ model MeetingRequest {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  participants    MeetingParticipant[]
-  calendarBlocks  CalendarBlock[]
+  participants   MeetingParticipant[]
+  calendarBlocks CalendarBlock[]
 }
 
 model MeetingParticipant {
@@ -326,7 +362,7 @@ model MeetingParticipant {
 }
 
 model CalendarBlock {
-  id            String   @id @default(uuid())
+  id               String          @id @default(uuid())
   userId           String
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   taskId           String?
@@ -334,11 +370,11 @@ model CalendarBlock {
   meetingRequestId String?
   meetingRequest   MeetingRequest? @relation(fields: [meetingRequestId], references: [id], onDelete: Cascade)
   startDatetime    DateTime
-  endDatetime   DateTime
-  label         String
-  description   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  endDatetime      DateTime
+  label            String
+  description      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }
 
 model Invite {
@@ -361,4 +397,187 @@ model PasswordResetToken {
   expiresAt DateTime
   isUsed    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Channel {
+  id             String      @id @default(uuid())
+  name           String
+  description    String?
+  isPrivate      Boolean     @default(false)
+  type           ChannelType @default(Project)
+  
+  workspaceId    String
+  workspace      Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  projectId      String?
+  project        Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  participant1Id String?
+  participant2Id String?
+
+  creatorId      String
+  creator        User        @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  members        ChannelMember[]
+  messages       Message[]
+  channelMutes   ChannelMute[]
+
+  @@unique([workspaceId, participant1Id, participant2Id])
+}
+
+model ChannelMember {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId         String
+  channel           Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  joinedAt          DateTime @default(now())
+  lastReadMessageId String?
+  lastReadMessage   Message? @relation("ReadReceipts", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, channelId])
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  body            String
+  isEdited        Boolean  @default(false)
+  isDeleted       Boolean  @default(false)
+  channelId       String
+  channel         Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentMessageId String?
+  parentMessage   Message? @relation("ThreadedMessages", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  mentions        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  replies      Message[]           @relation("ThreadedMessages")
+  attachments  MessageAttachment[]
+  readReceipts ChannelMember[]     @relation("ReadReceipts")
+
+  @@index([channelId, createdAt])
+}
+
+model MessageAttachment {
+  id         String   @id @default(uuid())
+  fileName   String
+  storageKey String
+  fileSize   Int
+  mimeType   String
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model ChannelMute {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId  String
+  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  mutedUntil DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, channelId])
+}
+
+model ProjectChatMute {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mutedUntil DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, projectId])
+}
+
+// ----------------------------------------------------------------------------
+// AUDIT LOGS
+// ----------------------------------------------------------------------------
+
+enum AuditEventType {
+  // Auth (workspace level)
+  LOGIN_SUCCESS
+  LOGOUT
+  BRUTE_FORCE_DETECTED
+
+  // Rate Limiting (workspace level)
+  RATE_LIMIT_VIOLATION
+
+  // Workspace (workspace level)
+  WORKSPACE_CREATED
+  WORKSPACE_UPDATED
+  WORKSPACE_ARCHIVED
+  WORKSPACE_DELETED
+  WORKSPACE_SETTINGS_CHANGED
+
+  // Workspace Members (workspace level)
+  WORKSPACE_MEMBER_INVITED
+  WORKSPACE_MEMBER_REMOVED
+  WORKSPACE_MEMBER_ROLE_CHANGED
+
+  // Projects (workspace level)
+  PROJECT_CREATED
+  PROJECT_ARCHIVED
+  PROJECT_DELETED
+  PROJECT_MEMBER_ADDED
+  PROJECT_MEMBER_REMOVED
+
+  // Tasks (project level)
+  TASK_CREATED
+  TASK_DELETED
+  TASK_STATUS_CHANGED
+  TASK_ASSIGNEE_CHANGED
+  TASK_DESCRIPTION_CHANGED
+  TASK_DUE_DATE_CHANGED
+
+  // Sub-tasks (project level)
+  SUBTASK_CREATED
+  SUBTASK_ASSIGNED
+
+  // Comments (project level)
+  COMMENT_ADDED
+  COMMENT_DELETED_BY_ADMIN
+
+  // Attachments (project level)
+  ATTACHMENT_UPLOADED
+  ATTACHMENT_DELETED
+
+  // Calendar (project level)
+  MEETING_REQUESTED
+
+  // Project Settings (project level)
+  PROJECT_SETTINGS_CHANGED
+  PROJECT_MEMBER_ROLE_CHANGED
+}
+
+model AuditLog {
+  id           String         @id @default(uuid())
+  workspaceId  String?
+  actorId      String?
+  actorEmail   String?
+  actorRole    String?
+  event        AuditEventType
+  resourceType String?
+  resourceId   String?
+  resourceName String?
+  metadata     Json?
+  ipAddress    String?
+  createdAt    DateTime       @default(now())
+
+  workspace    Workspace?     @relation(fields: [workspaceId], references: [id])
+  actor        User?          @relation(fields: [actorId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, event])
 }

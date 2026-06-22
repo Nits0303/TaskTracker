@@ -5,6 +5,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from '../common/guards/custom-throttler.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @Controller('users')
@@ -22,6 +24,8 @@ export class UserController {
     return this.userService.updateProfile(user.userId, body);
   }
 
+  @UseGuards(CustomThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('me/avatar')
   @UseInterceptors(FileInterceptor('file'))
   async uploadAvatar(@CurrentUser() user: any, @UploadedFile() file: Express.Multer.File) {

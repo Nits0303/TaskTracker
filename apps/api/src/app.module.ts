@@ -5,6 +5,20 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
 import { Redis } from 'ioredis';
 import { AppController } from './app.controller';
+
+class FailOpenThrottlerStorage extends ThrottlerStorageRedisService {
+  async increment(key: string, ttl: number, limit: number, blockDuration: number, throttlerName: string) {
+    try {
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Throttler Redis timeout')), 1000));
+      return await Promise.race([
+        super.increment(key, ttl, limit, blockDuration, throttlerName),
+        timeout
+      ]);
+    } catch (e) {
+      return { totalHits: 0, timeToExpire: 0, isBlocked: false, timeToBlockExpire: 0 };
+    }
+  }
+}
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -19,7 +33,12 @@ import { CalendarModule } from './calendar/calendar.module';
 import { WorkloadModule } from './workload/workload.module';
 import { NotificationModule } from './notification/notification.module';
 import { UserModule } from './user/user.module';
+import { PresenceModule } from './presence/presence.module';
+import { ChatModule } from './chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { SearchModule } from './search/search.module';
+import { AuditModule } from './audit/audit.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -32,7 +51,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         throttlers: [
           { name: 'default', ttl: 60000, limit: 100 },
         ],
-        storage: new ThrottlerStorageRedisService(redis as any),
+        storage: new FailOpenThrottlerStorage(redis as any),
       }),
     }),
     PrismaModule,
@@ -47,6 +66,11 @@ import { ScheduleModule } from '@nestjs/schedule';
     WorkloadModule,
     NotificationModule,
     UserModule,
+    PresenceModule,
+    ChatModule,
+    SearchModule,
+    AuditModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

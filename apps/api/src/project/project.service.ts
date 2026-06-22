@@ -1,16 +1,18 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, ActivityEventType } from '@prisma/client';
+import { Role, ActivityEventType, AuditEventType } from '@prisma/client';
 import { ActivityService } from '../activity/activity.service';
+import { AuditLogService } from '../audit/audit.service';
 
 @Injectable()
 export class ProjectService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activity: ActivityService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
-  async createProject(userId: string, slug: string, data: any) {
+  async createProject(userId: string, slug: string, data: any, ipAddress?: string) {
     const workspace = await this.prisma.workspace.findUnique({
       where: { slug },
       include: { members: { where: { userId } } }
@@ -22,7 +24,7 @@ export class ProjectService {
       throw new ForbiddenException('Only Workspace Owner or Admin can create projects');
     }
 
-    return this.prisma.project.create({
+    const project = await this.prisma.project.create({
       data: {
         name: data.name,
         description: data.description,
@@ -35,6 +37,18 @@ export class ProjectService {
         }
       }
     });
+
+    await this.auditLogService.log({
+      event: AuditEventType.PROJECT_CREATED,
+      workspaceId: workspace.id,
+      actorId: userId,
+      ipAddress,
+      resourceType: 'Project',
+      resourceId: project.id,
+      resourceName: project.name,
+    });
+
+    return project;
   }
 
   async getProjects(userId: string, slug: string) {
@@ -47,12 +61,12 @@ export class ProjectService {
     const member = workspace.members[0];
     if (!member) throw new ForbiddenException('Not a workspace member');
 
-    const isWorkspaceAdmin = member.role === Role.Owner || member.role === Role.Admin;
+    const isWorkspaceOwner = member.role === Role.Owner;
 
     const projects = await this.prisma.project.findMany({
       where: {
         workspaceId: workspace.id,
-        ...(isWorkspaceAdmin ? {} : { members: { some: { userId } } })
+        ...(isWorkspaceOwner ? {} : { OR: [{ isPublic: true }, { members: { some: { userId } } }] })
       },
       include: {
         members: {
@@ -85,7 +99,7 @@ export class ProjectService {
         transitionMode: p.transitionMode,
         customTransitions: p.customTransitions,
         createdAt: p.createdAt,
-        userRole: p.members[0]?.role || (isWorkspaceAdmin ? member.role : null),
+        userRole: p.members[0]?.role || (isWorkspaceOwner ? member.role : null),
         memberCount: p._count.members,
         taskCounts: {
           total: p._count.tasks,
@@ -150,8 +164,8 @@ export class ProjectService {
     };
   }
 
-  async updateProject(projectId: string, data: any) {
-    return this.prisma.project.update({
+  async updateProject(projectId: string, data: any, actorId?: string, ipAddress?: string) {
+    const project = await this.prisma.project.update({
       where: { id: projectId },
       data: {
         name: data.name,
@@ -163,20 +177,60 @@ export class ProjectService {
         ...(data.customTransitions !== undefined && { customTransitions: data.customTransitions || null })
       }
     });
+
+    if (actorId) {
+      await this.auditLogService.log({
+        event: AuditEventType.PROJECT_SETTINGS_CHANGED,
+        workspaceId: project.workspaceId,
+        actorId,
+        ipAddress,
+        resourceType: 'Project',
+        resourceId: project.id,
+        resourceName: project.name,
+      });
+    }
+
+    return project;
   }
 
-  async archiveProject(projectId: string) {
-    return this.prisma.project.update({
+  async archiveProject(projectId: string, actorId?: string, ipAddress?: string) {
+    const project = await this.prisma.project.update({
       where: { id: projectId },
       data: { isArchived: true }
     });
+
+    if (actorId) {
+      await this.auditLogService.log({
+        event: AuditEventType.PROJECT_ARCHIVED,
+        workspaceId: project.workspaceId,
+        actorId,
+        ipAddress,
+        resourceType: 'Project',
+        resourceId: project.id,
+        resourceName: project.name,
+      });
+    }
+
+    return project;
   }
 
-  async deleteProject(projectId: string, confirmationName: string) {
+  async deleteProject(projectId: string, confirmationName: string, actorId?: string, ipAddress?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Project not found');
     if (project.name !== confirmationName) {
       throw new ForbiddenException('Project name confirmation does not match');
+    }
+
+    if (actorId) {
+      await this.auditLogService.log({
+        event: AuditEventType.PROJECT_DELETED,
+        workspaceId: project.workspaceId,
+        actorId,
+        ipAddress,
+        resourceType: 'Project',
+        resourceId: project.id,
+        resourceName: project.name,
+      });
     }
 
     return this.prisma.project.delete({
@@ -200,7 +254,7 @@ export class ProjectService {
     });
   }
 
-  async addMember(projectId: string, targetUserId: string, role: Role) {
+  async addMember(projectId: string, targetUserId: string, role: Role, actorId?: string, ipAddress?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Project not found');
 
@@ -229,10 +283,23 @@ export class ProjectService {
       projectId,
     });
 
+    if (actorId) {
+      const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { fullName: true } });
+      await this.auditLogService.log({
+        event: AuditEventType.PROJECT_MEMBER_ADDED,
+        workspaceId: project.workspaceId,
+        actorId,
+        ipAddress,
+        resourceType: 'User',
+        resourceId: targetUserId,
+        metadata: { role, projectId, projectName: project.name, memberName: targetUser?.fullName }
+      });
+    }
+
     return { success: true };
   }
 
-  async updateMemberRole(projectId: string, targetUserId: string, role: Role) {
+  async updateMemberRole(projectId: string, targetUserId: string, role: Role, actorId?: string, ipAddress?: string) {
     const member = await this.prisma.projectMember.findUnique({
       where: { userId_projectId: { userId: targetUserId, projectId } }
     });
@@ -242,10 +309,27 @@ export class ProjectService {
       where: { id: member.id },
       data: { role }
     });
+
+    if (actorId) {
+      const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+      const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { fullName: true } });
+      if (project) {
+        await this.auditLogService.log({
+          event: AuditEventType.PROJECT_MEMBER_ROLE_CHANGED,
+          workspaceId: project.workspaceId,
+          actorId,
+          ipAddress,
+          resourceType: 'ProjectMember',
+          resourceId: member.id,
+          metadata: { targetUserId, oldRole: member.role, newRole: role, projectId, projectName: project.name, memberName: targetUser?.fullName }
+        });
+      }
+    }
+
     return { success: true };
   }
 
-  async removeMember(projectId: string, targetUserId: string) {
+  async removeMember(projectId: string, targetUserId: string, actorId?: string, ipAddress?: string) {
     const member = await this.prisma.projectMember.findUnique({
       where: { userId_projectId: { userId: targetUserId, projectId } }
     });
@@ -258,6 +342,21 @@ export class ProjectService {
       actorId: targetUserId,
       projectId,
     });
+
+    if (actorId) {
+      const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+      if (project) {
+        await this.auditLogService.log({
+          event: AuditEventType.PROJECT_MEMBER_REMOVED,
+          workspaceId: project.workspaceId,
+          actorId,
+          ipAddress,
+          resourceType: 'User',
+          resourceId: targetUserId,
+          metadata: { projectId }
+        });
+      }
+    }
 
     return { success: true };
   }

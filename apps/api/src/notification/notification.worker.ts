@@ -86,6 +86,20 @@ export class NotificationWorker implements OnModuleInit {
   }
 
   private async handleInApp(data: DispatchPayload) {
+    const prefs = await this.prisma.notificationPreference.findUnique({
+      where: { userId: data.recipientId }
+    });
+
+    if (prefs) {
+      if (data.type === 'task_assigned' && !prefs.inAppTaskAssignments) return;
+      if (data.type === 'mention' && !prefs.inAppMentions) return;
+      if (data.type === 'due_reminder' && !prefs.inAppTaskDeadlines) return;
+      if (data.type === 'task_updated' && !prefs.inAppTaskUpdates) return;
+      if (['meeting_request', 'meeting_response', 'meeting_cancelled'].includes(data.type) && !prefs.inAppCalendarEvents) return;
+      if (data.type === 'member_joined' && !prefs.inAppMemberJoined) return;
+      if (data.type === 'direct_message' && !prefs.inAppDirectMessages) return;
+    }
+
     const record = await this.prisma.notification.create({
       data: {
         recipientId: data.recipientId,
@@ -108,8 +122,18 @@ export class NotificationWorker implements OnModuleInit {
       where: { userId: data.recipientId }
     });
 
-    if (prefs && !prefs.emailEnabled) {
-      return; // Opted out
+    const immutableTypes = ['workspace_invite', 'password_reset', 'password_changed'];
+    
+    if (!immutableTypes.includes(data.type)) {
+      
+      const optInTypes = ['task_assigned', 'mention', 'due_reminder'];
+      if (!optInTypes.includes(data.type)) return; // Do not send emails for DMs, etc.
+
+      if (prefs) {
+        if (data.type === 'task_assigned' && !prefs.emailTaskAssignments) return;
+        if (data.type === 'mention' && !prefs.emailMentions) return;
+        if (data.type === 'due_reminder' && !prefs.emailTaskDeadlines) return;
+      }
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: data.recipientId } });

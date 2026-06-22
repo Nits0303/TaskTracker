@@ -4,11 +4,12 @@ import cookieParser from 'cookie-parser';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 import { REDIS_CLIENT } from './realtime/redis.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter(), new ThrottlerExceptionFilter());
   app.use(cookieParser());
   
   app.enableCors({

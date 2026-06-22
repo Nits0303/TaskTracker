@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from '../common/guards/custom-throttler.guard';
 import { CalendarService } from './calendar.service';
 
 @Controller('workspaces/:slug/projects/:projectId')
@@ -60,6 +62,8 @@ export class CalendarController {
     return this.calendarService.deletePersonalBlock(userId, projectId, blockId);
   }
 
+  @UseGuards(CustomThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('meetings/check-conflicts')
   async checkConflicts(
     @Body() body: { participants: string[], startDatetime: string, endDatetime: string },
@@ -67,6 +71,8 @@ export class CalendarController {
     return this.calendarService.checkConflicts(body.participants, body.startDatetime, body.endDatetime);
   }
 
+  @UseGuards(CustomThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('meetings')
   async createMeeting(
     @Req() req: any,

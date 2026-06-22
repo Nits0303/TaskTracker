@@ -1,9 +1,11 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
 import * as Minio from 'minio';
 import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
+import { AuditLogService } from '../audit/audit.service';
+import { AuditEventType } from '@prisma/client';
 
 @Injectable()
 export class WorkspaceService {
@@ -12,7 +14,8 @@ export class WorkspaceService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {
     this.minioClient = new Minio.Client({
       endPoint: this.config.get('MINIO_ENDPOINT', 'localhost'),
@@ -24,11 +27,11 @@ export class WorkspaceService {
     this.bucket = this.config.get('MINIO_BUCKET', 'task-tracker');
   }
 
-  async createWorkspace(userId: string, data: any) {
+  async createWorkspace(userId: string, data: any, ipAddress?: string) {
     const existing = await this.prisma.workspace.findUnique({ where: { slug: data.slug } });
     if (existing) throw new ConflictException('Workspace slug already taken');
 
-    return this.prisma.workspace.create({
+    const workspace = await this.prisma.workspace.create({
       data: {
         name: data.name,
         slug: data.slug,
@@ -43,6 +46,18 @@ export class WorkspaceService {
       },
       include: { members: true }
     });
+
+    await this.auditLogService.log({
+      event: AuditEventType.WORKSPACE_CREATED,
+      workspaceId: workspace.id,
+      actorId: userId,
+      ipAddress,
+      resourceType: 'Workspace',
+      resourceId: workspace.id,
+      resourceName: workspace.name,
+    });
+
+    return workspace;
   }
 
   async getUserWorkspaces(userId: string) {
@@ -76,9 +91,12 @@ export class WorkspaceService {
         members: {
           include: {
             user: {
-              select: { id: true, fullName: true, email: true, avatarUrl: true }
+              select: { id: true, fullName: true, email: true, avatarUrl: true, lastSeenAt: true }
             }
           }
+        },
+        invites: {
+          where: { isUsed: false }
         }
       }
     });
@@ -94,8 +112,8 @@ export class WorkspaceService {
     };
   }
 
-  async updateWorkspace(slug: string, data: any) {
-    return this.prisma.workspace.update({
+  async updateWorkspace(slug: string, data: any, userId?: string, ipAddress?: string) {
+    const workspace = await this.prisma.workspace.update({
       where: { slug },
       data: { 
         name: data.name, 
@@ -104,25 +122,66 @@ export class WorkspaceService {
         emailNotifications: data.emailNotifications
       }
     });
+
+    if (userId) {
+      await this.auditLogService.log({
+        event: AuditEventType.WORKSPACE_UPDATED,
+        workspaceId: workspace.id,
+        actorId: userId,
+        ipAddress,
+        resourceType: 'Workspace',
+        resourceId: workspace.id,
+        resourceName: workspace.name,
+      });
+    }
+
+    return workspace;
   }
 
-  async archiveWorkspace(slug: string) {
-    return this.prisma.workspace.update({
+  async archiveWorkspace(slug: string, userId?: string, ipAddress?: string) {
+    const workspace = await this.prisma.workspace.update({
       where: { slug },
       data: { isArchived: true }
     });
+
+    if (userId) {
+      await this.auditLogService.log({
+        event: AuditEventType.WORKSPACE_ARCHIVED,
+        workspaceId: workspace.id,
+        actorId: userId,
+        ipAddress,
+        resourceType: 'Workspace',
+        resourceId: workspace.id,
+        resourceName: workspace.name,
+      });
+    }
+
+    return workspace;
   }
 
-  async deleteWorkspace(slug: string, nameConfirm: string) {
+  async deleteWorkspace(slug: string, nameConfirm: string, userId?: string, ipAddress?: string) {
     const workspace = await this.prisma.workspace.findUnique({ where: { slug } });
     if (!workspace) throw new NotFoundException('Workspace not found');
     if (workspace.name !== nameConfirm) throw new BadRequestException('Workspace name confirmation does not match');
+
+    if (userId) {
+      await this.auditLogService.log({
+        event: AuditEventType.WORKSPACE_DELETED,
+        workspaceId: workspace.id,
+        actorId: userId,
+        ipAddress,
+        resourceType: 'Workspace',
+        resourceId: workspace.id,
+        resourceName: workspace.name,
+      });
+    }
 
     await this.prisma.workspace.delete({ where: { slug } });
     return { success: true };
   }
 
-  async inviteMember(slug: string, data: any, inviterId: string, workspaceId: string) {
+  async inviteMember(slug: string, data: any, inviterId: string, workspaceId: string, ipAddress?: string) {
+    if (data.email) data.email = data.email.toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email: data.email }
     });
@@ -133,6 +192,18 @@ export class WorkspaceService {
       });
       if (existingMember) {
         throw new BadRequestException('This user is already a member of this workspace');
+      }
+    }
+
+    const existingInvite = await this.prisma.invite.findFirst({
+      where: { email: data.email, workspaceId }
+    });
+    if (existingInvite) {
+      // If the invite is expired, we could delete it, but for now just throw
+      if (existingInvite.expiresAt < new Date()) {
+        await this.prisma.invite.delete({ where: { id: existingInvite.id } });
+      } else {
+        throw new BadRequestException('A pending invite has already been sent to this email');
       }
     }
 
@@ -150,7 +221,8 @@ export class WorkspaceService {
       },
     });
 
-    const inviteUrl = `http://localhost:3000/accept-invite?token=${token}`;
+    const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3000';
+    const inviteUrl = `${frontendUrl}/accept-invite?token=${token}`;
     
     const smtpHost = this.config.get('SMTP_HOST');
     
@@ -182,10 +254,20 @@ export class WorkspaceService {
       console.log(`[Email System Mock] Invite sent to ${data.email}: ${inviteUrl}`);
     }
 
+    await this.auditLogService.log({
+      event: AuditEventType.WORKSPACE_MEMBER_INVITED,
+      workspaceId,
+      actorId: inviterId,
+      ipAddress,
+      resourceType: 'User',
+      resourceName: data.email,
+      metadata: { role: data.role, email: data.email }
+    });
+
     return { success: true, message: 'Invite sent successfully' };
   }
 
-  async acceptInvite(userId: string, token: string) {
+  async acceptInvite(userId: string, token: string, ipAddress?: string) {
     const invite = await this.prisma.invite.findUnique({
       where: { token },
       include: { workspace: true }
@@ -224,7 +306,7 @@ export class WorkspaceService {
     return { success: true, workspaceSlug: invite.workspace.slug };
   }
 
-  async changeMemberRole(slug: string, targetUserId: string, newRole: any, workspaceId: string) {
+  async changeMemberRole(slug: string, targetUserId: string, newRole: any, workspaceId: string, actorId?: string, ipAddress?: string) {
     const membership = await this.prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId: targetUserId, workspaceId } }
     });
@@ -233,13 +315,27 @@ export class WorkspaceService {
     if (membership.role === 'Owner') throw new BadRequestException('Cannot change role of the Owner');
     if (newRole === 'Owner') throw new BadRequestException('Cannot transfer ownership through this endpoint');
 
-    return this.prisma.workspaceMember.update({
+    const updated = await this.prisma.workspaceMember.update({
       where: { userId_workspaceId: { userId: targetUserId, workspaceId } },
       data: { role: newRole }
     });
+
+    if (actorId) {
+      await this.auditLogService.log({
+        event: AuditEventType.WORKSPACE_MEMBER_ROLE_CHANGED,
+        workspaceId: workspaceId,
+        actorId,
+        ipAddress,
+        resourceType: 'WorkspaceMember',
+        resourceId: updated.id,
+        metadata: { targetUserId, newRole }
+      });
+    }
+
+    return updated;
   }
 
-  async removeMember(slug: string, targetUserId: string, removerId: string, removerRole: string, workspaceId: string) {
+  async removeMember(slug: string, targetUserId: string, removerId: string, removerRole: string, workspaceId: string, ipAddress?: string) {
     const membership = await this.prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId: targetUserId, workspaceId } }
     });
@@ -253,10 +349,20 @@ export class WorkspaceService {
     await this.prisma.workspaceMember.delete({
       where: { userId_workspaceId: { userId: targetUserId, workspaceId } }
     });
+
+    await this.auditLogService.log({
+      event: AuditEventType.WORKSPACE_MEMBER_REMOVED,
+      workspaceId,
+      actorId: removerId,
+      ipAddress,
+      resourceType: 'User',
+      resourceId: targetUserId,
+    });
+
     return { success: true };
   }
 
-  async uploadLogo(slug: string, file: Express.Multer.File) {
+  async uploadLogo(slug: string, file: Express.Multer.File, userId?: string, ipAddress?: string) {
     const workspace = await this.prisma.workspace.findUnique({ where: { slug } });
     if (!workspace) throw new NotFoundException('Workspace not found');
 
@@ -273,8 +379,25 @@ export class WorkspaceService {
       'Content-Type': file.mimetype,
     });
 
-    const url = await this.minioClient.presignedGetObject(this.bucket, storageKey, 60 * 60 * 24 * 7); // 1 week
+    const protocol = this.config.get('MINIO_USE_SSL', 'false') === 'true' ? 'https' : 'http';
+    const host = this.config.get('MINIO_ENDPOINT', 'localhost');
+    const port = this.config.get('MINIO_PORT', '9000');
     
+    const url = `${protocol}://${host}:${port}/${this.bucket}/${storageKey}`;
+    
+    if (userId) {
+      await this.auditLogService.log({
+        event: AuditEventType.WORKSPACE_UPDATED,
+        workspaceId: workspace.id,
+        actorId: userId,
+        ipAddress,
+        resourceType: 'Workspace',
+        resourceId: workspace.id,
+        resourceName: workspace.name,
+        metadata: { action: 'uploadLogo' }
+      });
+    }
+
     // We update the workspace automatically or just return the URL and let the client save it
     return { url };
   }

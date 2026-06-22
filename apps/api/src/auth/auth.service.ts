@@ -7,6 +7,8 @@ import * as crypto from 'crypto';
 import { RegisterSchema, LoginSchema, InviteSchema, AcceptInviteSchema } from '@repo/shared';
 import { z } from 'zod';
 import { NotificationService } from '../notification/notification.service';
+import { AuditLogService } from '../audit/audit.service';
+import { AuditEventType } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -15,6 +17,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly notificationService: NotificationService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async hashPassword(password: string): Promise<string> {
@@ -46,6 +49,7 @@ export class AuthService {
   }
 
   async register(dto: any) {
+    if (dto.email) dto.email = dto.email.toLowerCase();
     const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existingUser) {
       throw new ConflictException('Email already in use');
@@ -85,7 +89,8 @@ export class AuthService {
     };
   }
 
-  async login(dto: any) {
+  async login(dto: any, ipAddress?: string) {
+    if (dto.email) dto.email = dto.email.toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.password) {
       throw new UnauthorizedException('Invalid credentials');
@@ -102,6 +107,13 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { refreshToken: hashedRefreshToken },
+    });
+
+    await this.auditLogService.log({
+      event: AuditEventType.LOGIN_SUCCESS,
+      actorId: user.id,
+      actorEmail: user.email,
+      ipAddress,
     });
 
     return {
@@ -158,16 +170,27 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string) {
+  async logout(userId: string, ipAddress?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     await this.prisma.user.update({
       where: { id: userId },
       data: { refreshToken: null },
     });
+
+    if (user) {
+      await this.auditLogService.log({
+        event: AuditEventType.LOGOUT,
+        actorId: user.id,
+        actorEmail: user.email,
+        ipAddress,
+      });
+    }
+
     return { success: true };
   }
 
-  async validateGoogleUser(profile: any) {
-    const email = profile.emails[0].value;
+  async validateGoogleUser(profile: any, ipAddress?: string) {
+    const email = profile.emails[0].value.toLowerCase();
     let user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user) {
@@ -195,10 +218,18 @@ export class AuthService {
       data: { refreshToken: hashedRefreshToken },
     });
 
+    await this.auditLogService.log({
+      event: AuditEventType.LOGIN_SUCCESS,
+      actorId: user.id,
+      actorEmail: user.email,
+      ipAddress,
+    });
+
     return { user, ...tokens };
   }
 
   async createInvite(userId: string, dto: any) {
+    if (dto.email) dto.email = dto.email.toLowerCase();
     const member = await this.prisma.workspaceMember.findUnique({
       where: { userId_workspaceId: { userId, workspaceId: dto.workspaceId } },
     });
@@ -339,6 +370,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    email = email.toLowerCase();
     // Always return success to prevent user enumeration
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || user.isGoogleAuth) return { success: true };

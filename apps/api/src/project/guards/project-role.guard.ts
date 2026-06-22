@@ -55,13 +55,19 @@ export class ProjectRoleGuard implements CanActivate {
 
     // Check if they are a Workspace Admin/Owner
     let workspaceId = projectMember?.project?.workspaceId;
-    if (!workspaceId) {
+    let isPublic = projectMember?.project?.isPublic;
+    if (!workspaceId || isPublic === undefined) {
       const project = await this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { workspaceId: true }
+        select: { workspaceId: true, isPublic: true }
       });
       if (!project) throw new NotFoundException('Project not found');
       workspaceId = project.workspaceId;
+      isPublic = project.isPublic;
+    }
+
+    if (isPublic && requiredRole === Role.Viewer) {
+      return true;
     }
 
     const workspaceMember = await this.prisma.workspaceMember.findUnique({
@@ -73,7 +79,7 @@ export class ProjectRoleGuard implements CanActivate {
       }
     });
 
-    if (workspaceMember && (workspaceMember.role === Role.Owner || workspaceMember.role === Role.Admin)) {
+    if (workspaceMember && workspaceMember.role === Role.Owner) {
        return true;
     }
 

@@ -1,0 +1,1 @@
+const nodemailer = require('nodemailer'); const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 587, secure: false, requireTLS: true, auth: { user: 'nityashah.22.cse@iite.indusuni.ac.in', pass: 'ntawgyadcwwpxcxn' } }); transporter.verify((error, success) => { if (error) { console.error('SMTP Error:', error); } else { console.log('SMTP Success!'); } });

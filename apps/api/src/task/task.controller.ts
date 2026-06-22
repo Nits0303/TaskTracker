@@ -6,6 +6,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { TaskService } from './task.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from '../common/guards/custom-throttler.guard';
 import { ProjectRoleGuard } from '../project/guards/project-role.guard';
 import { RequireProjectRole } from '../project/decorators/require-project-role.decorator';
 import { Role } from '@prisma/client';
@@ -81,15 +83,15 @@ export class TaskController {
   // --- SubTasks ---
   @Post(':taskId/subtasks')
   @RequireProjectRole(Role.Member)
-  async createSubTask(@Param('projectId') projectId: string, @Param('taskId') taskId: string, @Body() body: any, @Headers('x-socket-id') socketId?: string) {
+  async createSubTask(@Req() req: any, @Param('projectId') projectId: string, @Param('taskId') taskId: string, @Body() body: any, @Headers('x-socket-id') socketId?: string) {
     if (!body.title) throw new HttpException({ message: 'title is required' }, HttpStatus.BAD_REQUEST);
-    return this.taskService.createSubTask(projectId, taskId, body, socketId);
+    return this.taskService.createSubTask(req.user.userId, projectId, taskId, body, socketId);
   }
 
   @Patch(':taskId/subtasks/:subtaskId')
   @RequireProjectRole(Role.Member)
-  async updateSubTask(@Param('projectId') projectId: string, @Param('taskId') taskId: string, @Param('subtaskId') subtaskId: string, @Body() body: any, @Headers('x-socket-id') socketId?: string) {
-    return this.taskService.updateSubTask(projectId, taskId, subtaskId, body, socketId);
+  async updateSubTask(@Req() req: any, @Param('projectId') projectId: string, @Param('taskId') taskId: string, @Param('subtaskId') subtaskId: string, @Body() body: any, @Headers('x-socket-id') socketId?: string) {
+    return this.taskService.updateSubTask(req.user.userId, projectId, taskId, subtaskId, body, socketId);
   }
 
   @Delete(':taskId/subtasks/:subtaskId')
@@ -105,6 +107,8 @@ export class TaskController {
     return this.taskService.getComments(taskId);
   }
 
+  @UseGuards(CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post(':taskId/comments')
   @RequireProjectRole(Role.Member)
   async createComment(@Req() req: any, @Param('projectId') projectId: string, @Param('taskId') taskId: string, @Body() body: any, @Headers('x-socket-id') socketId?: string) {
@@ -125,6 +129,8 @@ export class TaskController {
     return this.taskService.getAttachments(taskId);
   }
 
+  @UseGuards(CustomThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post(':taskId/attachments')
   @RequireProjectRole(Role.Member)
   @UseInterceptors(FileInterceptor('file'))

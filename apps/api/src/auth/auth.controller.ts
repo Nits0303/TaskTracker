@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { RegisterSchema, LoginSchema, InviteSchema, AcceptInviteSchema } from '@repo/shared';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CustomThrottlerGuard } from '../common/guards/custom-throttler.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
@@ -41,13 +42,13 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'User logged in successfully.' })
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login')
-  async login(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+  async login(@Req() req: Request, @Body() body: any, @Res({ passthrough: true }) res: Response) {
     const result = LoginSchema.safeParse(body);
     if (!result.success) {
       throw new HttpException({ message: 'Validation failed', errors: result.error.format() }, HttpStatus.BAD_REQUEST);
     }
 
-    const { refreshToken, ...authResponse } = await this.authService.login(result.data);
+    const { refreshToken, ...authResponse } = await this.authService.login(result.data, req.ip);
     this.setRefreshCookie(res, refreshToken);
     return authResponse;
   }
@@ -71,9 +72,9 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Logged out successfully.' })
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: Request, @CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
     res.clearCookie('refreshToken');
-    return this.authService.logout(user.userId);
+    return this.authService.logout(user.userId, req.ip);
   }
 
   @Get('google')
@@ -85,14 +86,15 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    const { refreshToken, accessToken } = await this.authService.validateGoogleUser(req.user);
+    const { refreshToken, accessToken } = await this.authService.validateGoogleUser(req.user, req.ip);
     this.setRefreshCookie(res, refreshToken);
     
     // Redirecting to the frontend workspaces
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/workspaces?token=${accessToken}`);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('invite')
   async createInvite(@CurrentUser() user: any, @Body() body: any) {
     const result = InviteSchema.safeParse(body);

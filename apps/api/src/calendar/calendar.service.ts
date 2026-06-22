@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ActivityService } from '../activity/activity.service';
 import { NotificationService } from '../notification/notification.service';
+import { AuditLogService } from '../audit/audit.service';
+import { AuditEventType } from '@prisma/client';
 
 @Injectable()
 export class CalendarService {
@@ -11,6 +13,7 @@ export class CalendarService {
     private readonly realtime: RealtimeGateway,
     private readonly activityService: ActivityService,
     private readonly notificationService: NotificationService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async getMyCalendar(userId: string, projectId: string, startDate: Date, endDate: Date) {
@@ -279,6 +282,18 @@ export class CalendarService {
       actorId: userId,
       projectId,
       metadata: { meetingId: meeting.id, title },
+    });
+
+    const participantUsers = await this.prisma.user.findMany({ where: { id: { in: participants } }, select: { fullName: true } });
+    const participantNames = participantUsers.map(u => u.fullName).filter(Boolean);
+
+    await this.auditLogService.log({
+      event: AuditEventType.MEETING_REQUESTED,
+      workspaceId: workspace.id,
+      actorId: userId,
+      resourceType: 'Project',
+      resourceId: projectId,
+      metadata: { title, startTime: startDatetime, endTime: endDatetime, participantNames, projectId }
     });
 
     return meeting;

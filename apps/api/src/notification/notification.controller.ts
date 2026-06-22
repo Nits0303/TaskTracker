@@ -98,10 +98,26 @@ export class NotificationController {
   }
 
   @Patch('preferences')
-  async updatePreferences(@Req() req: any, @Body() body: { emailEnabled?: boolean, pushEnabled?: boolean }) {
+  async updatePreferences(@Req() req: any, @Body() body: any) {
     const data: any = {};
+    
+    // Legacy flags
     if (body.emailEnabled !== undefined) data.emailEnabled = body.emailEnabled;
     if (body.pushEnabled !== undefined) data.pushEnabled = body.pushEnabled;
+    
+    // Granular Email
+    if (body.emailTaskAssignments !== undefined) data.emailTaskAssignments = body.emailTaskAssignments;
+    if (body.emailMentions !== undefined) data.emailMentions = body.emailMentions;
+    if (body.emailTaskDeadlines !== undefined) data.emailTaskDeadlines = body.emailTaskDeadlines;
+    
+    // Granular In-App
+    if (body.inAppTaskAssignments !== undefined) data.inAppTaskAssignments = body.inAppTaskAssignments;
+    if (body.inAppMentions !== undefined) data.inAppMentions = body.inAppMentions;
+    if (body.inAppTaskDeadlines !== undefined) data.inAppTaskDeadlines = body.inAppTaskDeadlines;
+    if (body.inAppTaskUpdates !== undefined) data.inAppTaskUpdates = body.inAppTaskUpdates;
+    if (body.inAppCalendarEvents !== undefined) data.inAppCalendarEvents = body.inAppCalendarEvents;
+    if (body.inAppMemberJoined !== undefined) data.inAppMemberJoined = body.inAppMemberJoined;
+    if (body.inAppDirectMessages !== undefined) data.inAppDirectMessages = body.inAppDirectMessages;
 
     const prefs = await this.prisma.notificationPreference.upsert({
       where: { userId: req.user.userId },

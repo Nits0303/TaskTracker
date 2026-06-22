@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, TaskStatus, ActivityEventType } from '@prisma/client';
+import { Role, TaskStatus, ActivityEventType, AuditEventType } from '@prisma/client';
+import { AuditLogService } from '../audit/audit.service';
 import { ALLOWED_STATUS_TRANSITIONS } from '@repo/shared';
 import * as Minio from 'minio';
 import { ConfigService } from '@nestjs/config';
@@ -21,6 +22,7 @@ export class TaskService {
     private readonly realtime: RealtimeGateway,
     private readonly activity: ActivityService,
     private readonly notificationService: NotificationService,
+    private readonly auditLogService: AuditLogService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.minioClient = new Minio.Client({
@@ -167,6 +169,18 @@ export class TaskService {
       });
     }
 
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    if (project) {
+      await this.auditLogService.log({
+        event: AuditEventType.TASK_CREATED,
+        workspaceId: project.workspaceId,
+        actorId: userId,
+        resourceType: 'Task',
+        resourceId: task.id,
+        metadata: { projectId, taskTitle: task.title }
+      });
+    }
+
     await this.clearDashboardCache(projectId);
     
     return task;
@@ -215,7 +229,7 @@ export class TaskService {
 
     const oldTask = await this.prisma.task.findUnique({
       where: { id: taskId },
-      select: { status: true, assigneeId: true, version: true }
+      select: { status: true, assigneeId: true, version: true, description: true, dueDate: true, title: true, assignee: { select: { fullName: true } } }
     });
 
     if (!oldTask) throw new NotFoundException('Task not found');
@@ -334,6 +348,16 @@ export class TaskService {
           metadata: { oldStatus: oldTask?.status, newStatus: updated.status }
         });
       }
+
+      if (updated.assigneeId && updated.assigneeId !== userId) {
+        const actor = await this.prisma.user.findUnique({ where: { id: userId }, select: { fullName: true } });
+        await this.notificationService.dispatch({
+          recipientId: updated.assigneeId,
+          type: 'task_updated',
+          message: `${actor?.fullName || 'Someone'} changed the status of your task "${updated.title}" to ${updated.status}.`,
+          referenceId: updated.id,
+        });
+      }
     }
     this.realtime.emitToProject(projectId, 'task:updated', delta, socketId);
     this.activity.logEvent({
@@ -354,6 +378,57 @@ export class TaskService {
     }
 
     await this.clearDashboardCache(projectId);
+
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    if (project) {
+      if (data.status !== undefined && data.status !== oldTask?.status) {
+        await this.auditLogService.log({
+          event: AuditEventType.TASK_STATUS_CHANGED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'Task',
+          resourceId: taskId,
+          metadata: { projectId, taskName: oldTask.title, oldStatus: oldTask.status, newStatus: data.status }
+        });
+      }
+      if (data.assigneeId !== undefined && data.assigneeId !== oldTask?.assigneeId) {
+        let newAssigneeName = null;
+        if (data.assigneeId) {
+          const newA = await this.prisma.user.findUnique({ where: { id: data.assigneeId }, select: { fullName: true } });
+          newAssigneeName = newA?.fullName;
+        }
+        await this.auditLogService.log({
+          event: AuditEventType.TASK_ASSIGNEE_CHANGED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'Task',
+          resourceId: taskId,
+          metadata: { projectId, taskName: oldTask.title, oldAssigneeName: oldTask.assignee?.fullName || null, newAssigneeName }
+        });
+      }
+      if (data.description !== undefined && data.description !== oldTask?.description) {
+        await this.auditLogService.log({
+          event: AuditEventType.TASK_DESCRIPTION_CHANGED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'Task',
+          resourceId: taskId,
+          metadata: { projectId, taskName: oldTask.title }
+        });
+      }
+      const oldDueStr = oldTask?.dueDate ? new Date(oldTask.dueDate).toISOString() : null;
+      const newDueStr = data.dueDate ? new Date(data.dueDate).toISOString() : null;
+      if (data.dueDate !== undefined && oldDueStr !== newDueStr) {
+        await this.auditLogService.log({
+          event: AuditEventType.TASK_DUE_DATE_CHANGED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'Task',
+          resourceId: taskId,
+          metadata: { projectId, taskName: oldTask.title, oldDueDate: oldTask?.dueDate, newDueDate: data.dueDate }
+        });
+      }
+    }
 
     return { ...updated, previousStatus: oldTask?.status };
   }
@@ -410,6 +485,18 @@ export class TaskService {
     await this.prisma.task.delete({ where: { id: taskId } });
     this.realtime.emitToProject(projectId, 'task:deleted', { id: taskId }, socketId);
     
+    const proj = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    if (proj) {
+      await this.auditLogService.log({
+        event: AuditEventType.TASK_DELETED,
+        workspaceId: proj.workspaceId,
+        actorId: userId,
+        resourceType: 'Task',
+        resourceId: taskId,
+        metadata: { projectId }
+      });
+    }
+
     await this.clearDashboardCache(projectId);
     
     return { success: true };
@@ -428,7 +515,7 @@ export class TaskService {
   }
 
   // --- SubTask CRUD ---
-  async createSubTask(projectId: string, taskId: string, data: any, socketId?: string) {
+  async createSubTask(userId: string, projectId: string, taskId: string, data: any, socketId?: string) {
     const subtask = await this.prisma.subTask.create({
       data: {
         title: data.title,
@@ -442,10 +529,37 @@ export class TaskService {
     });
     this.realtime.emitToProject(projectId, 'subtask:updated', subtask, socketId);
     await this.broadcastSubtaskCounts(projectId, taskId, socketId);
+
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    const parentTask = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
+    
+    if (project && parentTask) {
+      await this.auditLogService.log({
+        event: AuditEventType.SUBTASK_CREATED,
+        workspaceId: project.workspaceId,
+        actorId: userId,
+        resourceType: 'SubTask',
+        resourceId: subtask.id,
+        metadata: { projectId, subtaskTitle: subtask.title, parentTaskName: parentTask.title }
+      });
+      
+      if (subtask.assigneeId) {
+        await this.auditLogService.log({
+          event: AuditEventType.SUBTASK_ASSIGNED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'SubTask',
+          resourceId: subtask.id,
+          metadata: { projectId, subtaskTitle: subtask.title, assigneeName: subtask.assignee?.fullName || null }
+        });
+      }
+    }
+
     return subtask;
   }
 
-  async updateSubTask(projectId: string, taskId: string, subtaskId: string, data: any, socketId?: string) {
+  async updateSubTask(userId: string, projectId: string, taskId: string, subtaskId: string, data: any, socketId?: string) {
+    const oldSubtask = await this.prisma.subTask.findUnique({ where: { id: subtaskId }, select: { assigneeId: true, title: true } });
     const subtask = await this.prisma.subTask.update({
       where: { id: subtaskId },
       data: {
@@ -463,6 +577,21 @@ export class TaskService {
     if (data.isDone !== undefined) {
       await this.broadcastSubtaskCounts(projectId, taskId, socketId);
     }
+
+    if (data.assigneeId !== undefined && data.assigneeId !== oldSubtask?.assigneeId) {
+      const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+      if (project) {
+        await this.auditLogService.log({
+          event: AuditEventType.SUBTASK_ASSIGNED,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'SubTask',
+          resourceId: subtask.id,
+          metadata: { projectId, subtaskTitle: subtask.title, assigneeName: subtask.assignee?.fullName || null }
+        });
+      }
+    }
+
     return subtask;
   }
 
@@ -527,6 +656,18 @@ export class TaskService {
       });
     }
 
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    if (project && task) {
+      await this.auditLogService.log({
+        event: AuditEventType.COMMENT_ADDED,
+        workspaceId: project.workspaceId,
+        actorId: userId,
+        resourceType: 'Task',
+        resourceId: taskId,
+        metadata: { projectId, taskName: task.title }
+      });
+    }
+
     return comment;
   }
 
@@ -547,6 +688,23 @@ export class TaskService {
 
     await this.prisma.comment.delete({ where: { id: commentId } });
     this.realtime.emitToProject(projectId, 'comment:deleted', { id: commentId, taskId }, socketId);
+
+    if (!isAuthor && isAdmin) {
+      const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+      if (project) {
+        const originalAuthor = await this.prisma.user.findUnique({ where: { id: comment.authorId }, select: { fullName: true } });
+        const task = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
+        await this.auditLogService.log({
+          event: AuditEventType.COMMENT_DELETED_BY_ADMIN,
+          workspaceId: project.workspaceId,
+          actorId: userId,
+          resourceType: 'Task',
+          resourceId: taskId,
+          metadata: { projectId, taskName: task?.title, originalAuthorName: originalAuthor?.fullName }
+        });
+      }
+    }
+
     return { success: true };
   }
 
@@ -626,13 +784,27 @@ export class TaskService {
       taskId,
       metadata: { fileName: file.originalname }
     });
+
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    const taskObj = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
+    if (project && taskObj) {
+      await this.auditLogService.log({
+        event: AuditEventType.ATTACHMENT_UPLOADED,
+        workspaceId: project.workspaceId,
+        actorId: userId,
+        resourceType: 'Task',
+        resourceId: taskId,
+        metadata: { projectId, taskName: taskObj.title, fileName: file.originalname }
+      });
+    }
+
     return result;
   }
 
   async deleteAttachment(userId: string, projectId: string, taskId: string, attachmentId: string, socketId?: string) {
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachmentId },
-      select: { uploaderId: true, storageKey: true }
+      select: { uploaderId: true, storageKey: true, fileName: true }
     });
     if (!attachment) throw new NotFoundException('Attachment not found');
 
@@ -647,6 +819,20 @@ export class TaskService {
     try { await this.minioClient.removeObject(this.bucket, attachment.storageKey); } catch {}
     await this.prisma.attachment.delete({ where: { id: attachmentId } });
     this.realtime.emitToProject(projectId, 'attachment:deleted', { id: attachmentId, taskId }, socketId);
+
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+    const taskObj = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
+    if (project && taskObj) {
+      await this.auditLogService.log({
+        event: AuditEventType.ATTACHMENT_DELETED,
+        workspaceId: project.workspaceId,
+        actorId: userId,
+        resourceType: 'Task',
+        resourceId: taskId,
+        metadata: { projectId, taskName: taskObj.title, fileName: attachment.fileName }
+      });
+    }
+
     return { success: true };
   }
 }
