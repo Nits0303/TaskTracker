@@ -1,14 +1,13 @@
 # Sequence Diagrams
 
 Four major workflows documented as step-by-step sequence diagrams.
-All diagrams use Mermaid `%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
-sequenceDiagram` syntax.
+All diagrams use Mermaid `sequenceDiagram` syntax.
 
 ## Login + Token Refresh Flow
 
 ### Token Generation Flow (Login)
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant User
     participant Browser
@@ -29,7 +28,7 @@ sequenceDiagram
 
 ### Token Refresh Flow (Axios interceptor)
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant Browser
     participant API
@@ -56,7 +55,7 @@ sequenceDiagram
 
 ### Google OAuth Flow
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant Browser
     participant Next as Next.js
@@ -85,7 +84,7 @@ sequenceDiagram
 ## Real-Time Task Update via Socket.IO
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant UA as UserA Browser
     participant UB as UserB Browser
@@ -115,7 +114,7 @@ sequenceDiagram
 ## Meeting Request + Accept Flow
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant Req as Requester Browser
     participant Part as Participant Browser
@@ -159,7 +158,7 @@ sequenceDiagram
 ## File Upload to MinIO
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
 sequenceDiagram
     participant Browser
     participant Next as Next.js

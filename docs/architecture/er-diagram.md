@@ -176,8 +176,8 @@ erDiagram
         Int sortOrder "nullable"
         String label "nullable"
         String projectId FK
-        String assigneeId "nullable" FK
-        String parentTaskId "nullable" FK
+        String assigneeId FK "nullable"
+        String parentTaskId FK "nullable"
         Boolean reminderSent
         Int version
         DateTime createdAt
@@ -188,7 +188,7 @@ erDiagram
         String id PK
         String title
         Boolean isDone
-        String assigneeId "nullable" FK
+        String assigneeId FK "nullable"
         DateTime dueDate "nullable"
         String description "nullable"
         String parentTaskId FK
@@ -201,7 +201,7 @@ erDiagram
         String body
         String taskId FK
         String authorId FK
-        String parentCommentId "nullable" FK
+        String parentCommentId FK "nullable"
         DateTime createdAt
         DateTime updatedAt
     }
@@ -218,8 +218,8 @@ erDiagram
     CalendarBlock {
         String id PK
         String userId FK
-        String taskId "nullable" FK
-        String meetingRequestId "nullable" FK
+        String taskId FK "nullable"
+        String meetingRequestId FK "nullable"
         DateTime startDatetime
         DateTime endDatetime
         String label
@@ -259,7 +259,7 @@ erDiagram
         Boolean isPrivate
         ChannelType type
         String workspaceId FK
-        String projectId "nullable" FK
+        String projectId FK "nullable"
         String participant1Id "nullable"
         String participant2Id "nullable"
         String creatorId FK
@@ -271,7 +271,7 @@ erDiagram
         String userId FK
         String channelId FK
         DateTime joinedAt
-        String lastReadMessageId "nullable" FK
+        String lastReadMessageId FK "nullable"
     }
     Message {
         String id PK
@@ -280,7 +280,7 @@ erDiagram
         Boolean isDeleted
         String channelId FK
         String authorId FK
-        String parentMessageId "nullable" FK
+        String parentMessageId FK "nullable"
         Json mentions "nullable"
         DateTime createdAt
         DateTime updatedAt
@@ -332,7 +332,7 @@ erDiagram
         String id PK
         String requesterId FK
         String workspaceId FK
-        String projectId "nullable" FK
+        String projectId FK "nullable"
         String title
         String agenda "nullable"
         DateTime startDatetime
@@ -373,7 +373,7 @@ erDiagram
         ActivityEventType eventType
         String actorId FK
         String projectId FK
-        String taskId "nullable" FK
+        String taskId FK "nullable"
         Json metadata "nullable"
         DateTime createdAt
     }
@@ -389,8 +389,8 @@ erDiagram
     }
     AuditLog {
         String id PK
-        String workspaceId "nullable" FK
-        String actorId "nullable" FK
+        String workspaceId FK "nullable"
+        String actorId FK "nullable"
         String actorEmail "nullable"
         String actorRole "nullable"
         AuditEventType event
