@@ -509,6 +509,9 @@ export class CalendarService {
       this.realtime.emitToUser(p.userId, 'meeting:cancelled', { meetingId });
     }
 
+    // Emit to the requester as well so their other sessions sync
+    this.realtime.emitToUser(userId, 'meeting:cancelled', { meetingId });
+
     return { success: true };
   }
 

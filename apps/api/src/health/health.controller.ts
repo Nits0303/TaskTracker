@@ -5,7 +5,9 @@ import { PrismaHealthIndicator } from './indicators/prisma.health';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { MinioHealthIndicator } from './indicators/minio.health';
 import { BullMQHealthIndicator } from './indicators/bullmq.health';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
+@ApiTags('Health Check')
 @Controller({
   path: 'health',
   version: VERSION_NEUTRAL,
@@ -20,6 +22,9 @@ export class HealthController {
     private bullmqIndicator: BullMQHealthIndicator,
   ) {}
 
+  @ApiOperation({ summary: 'Get application health status' })
+  @ApiResponse({ status: 200, description: 'Service is healthy.' })
+  @ApiResponse({ status: 503, description: 'Service is unhealthy.' })
   @Get()
   async check(@Res() res: Response) {
     const indicators = [

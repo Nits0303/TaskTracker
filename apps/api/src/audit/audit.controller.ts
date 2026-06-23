@@ -2,7 +2,7 @@ import { Controller, Get, Param, Query, UseGuards, HttpException, HttpStatus } f
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WorkspaceRoleGuard, RequireRole } from '../workspace/guards/workspace-role.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('Audit Logs')
 @ApiBearerAuth()
@@ -12,6 +12,13 @@ export class AuditController {
   constructor(private readonly prisma: PrismaService) {}
 
   @ApiOperation({ summary: 'Get workspace audit logs' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page' })
+  @ApiQuery({ name: 'event', required: false, description: 'Filter by event type' })
+  @ApiQuery({ name: 'actorId', required: false, description: 'Filter by actor ID' })
+  @ApiQuery({ name: 'from', required: false, description: 'Start date (ISO)' })
+  @ApiQuery({ name: 'to', required: false, description: 'End date (ISO)' })
   @ApiResponse({ status: 200, description: 'List of audit logs.' })
   @RequireRole('Admin')
   @Get()

@@ -8,7 +8,8 @@ import { RequireRole as RequireWorkspaceRole } from '../workspace/guards/workspa
 import { RequireProjectRole } from './decorators/require-project-role.decorator';
 import { Role } from '@prisma/client';
 import { CreateProjectSchema, UpdateProjectSchema } from '@repo/shared';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { CreateProjectDto, UpdateProjectDto, DeleteProjectDto, AddProjectMemberDto, UpdateProjectMemberRoleDto } from './dto/project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('Projects')
@@ -22,11 +23,13 @@ export class ProjectController {
   ) {}
 
   @ApiOperation({ summary: 'Create a new project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
   @ApiResponse({ status: 201, description: 'Project created.' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
   @UseGuards(WorkspaceRoleGuard)
   @RequireWorkspaceRole(Role.Admin)
   @Post()
-  async createProject(@CurrentUser() user: any, @Param('slug') slug: string, @Body() body: any, @Req() req: any) {
+  async createProject(@CurrentUser() user: any, @Param('slug') slug: string, @Body() body: CreateProjectDto, @Req() req: any) {
     // The shared CreateProjectSchema requires workspaceId, but our API is nested under slug.
     // For validation here, we validate name and description directly.
     const result = CreateProjectSchema.omit({ workspaceId: true }).safeParse(body);
@@ -37,6 +40,7 @@ export class ProjectController {
   }
 
   @ApiOperation({ summary: 'Get all projects in workspace' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
   @ApiResponse({ status: 200, description: 'List of projects.' })
   @UseGuards(WorkspaceRoleGuard)
   @RequireWorkspaceRole(Role.Viewer)
@@ -46,7 +50,10 @@ export class ProjectController {
   }
 
   @ApiOperation({ summary: 'Get a specific project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
   @ApiResponse({ status: 200, description: 'Project details.' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Viewer)
   @Get(':projectId')
@@ -54,10 +61,16 @@ export class ProjectController {
     return this.projectService.getProject(user.userId, projectId);
   }
 
+  @ApiOperation({ summary: 'Update project details' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'Project updated.' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
   @Patch(':projectId')
-  async updateProject(@Param('projectId') projectId: string, @Body() body: any, @CurrentUser() user: any, @Req() req: any) {
+  async updateProject(@Param('projectId') projectId: string, @Body() body: UpdateProjectDto, @CurrentUser() user: any, @Req() req: any) {
     const result = UpdateProjectSchema.omit({ workspaceId: true }).safeParse(body);
     if (!result.success) {
       throw new HttpException({ message: 'Validation failed', errors: result.error.format() }, HttpStatus.BAD_REQUEST);
@@ -65,6 +78,11 @@ export class ProjectController {
     return this.projectService.updateProject(projectId, result.data, user.userId, req.ip);
   }
 
+  @ApiOperation({ summary: 'Archive a project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'Project archived.' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
   @Patch(':projectId/archive')
@@ -73,6 +91,14 @@ export class ProjectController {
   }
 
   @ApiOperation({ summary: 'Get project audit logs' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number', example: 1 })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 50)', example: 20 })
+  @ApiQuery({ name: 'event', required: false, description: 'Comma separated list of events' })
+  @ApiQuery({ name: 'actorId', required: false, description: 'Filter by actor user ID' })
+  @ApiQuery({ name: 'from', required: false, description: 'Start date (ISO)' })
+  @ApiQuery({ name: 'to', required: false, description: 'End date (ISO)' })
   @ApiResponse({ status: 200, description: 'List of project audit logs.' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
@@ -177,16 +203,26 @@ export class ProjectController {
     };
   }
 
+  @ApiOperation({ summary: 'Delete a project permanently' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'Project deleted.' })
+  @ApiResponse({ status: 400, description: 'Validation error - name mismatch' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(WorkspaceRoleGuard)
   @RequireWorkspaceRole(Role.Owner)
   @Delete(':projectId')
-  async deleteProject(@Param('projectId') projectId: string, @Body() body: any, @CurrentUser() user: any, @Req() req: any) {
+  async deleteProject(@Param('projectId') projectId: string, @Body() body: DeleteProjectDto, @CurrentUser() user: any, @Req() req: any) {
     if (!body.name) {
       throw new HttpException({ message: 'Project name is required for deletion confirmation' }, HttpStatus.BAD_REQUEST);
     }
     return this.projectService.deleteProject(projectId, body.name, user.userId, req.ip);
   }
 
+  @ApiOperation({ summary: 'Get all members of a project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'List of project members.' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Viewer)
   @Get(':projectId/members')
@@ -194,26 +230,43 @@ export class ProjectController {
     return this.projectService.getMembers(projectId);
   }
 
+  @ApiOperation({ summary: 'Add a user to a project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiResponse({ status: 201, description: 'Member added to project.' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
   @Post(':projectId/members')
-  async addMember(@Param('projectId') projectId: string, @Body() body: any, @CurrentUser() user: any, @Req() req: any) {
+  async addMember(@Param('projectId') projectId: string, @Body() body: AddProjectMemberDto, @CurrentUser() user: any, @Req() req: any) {
     if (!body.userId || !body.role) {
       throw new HttpException({ message: 'userId and role are required' }, HttpStatus.BAD_REQUEST);
     }
     return this.projectService.addMember(projectId, body.userId, body.role, user.userId, req.ip);
   }
 
+  @ApiOperation({ summary: 'Update a project member role' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiParam({ name: 'userId', description: 'User ID of the member', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'Member role updated.' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
   @Patch(':projectId/members/:userId/role')
-  async updateMemberRole(@Param('projectId') projectId: string, @Param('userId') targetUserId: string, @Body() body: any, @CurrentUser() user: any, @Req() req: any) {
+  async updateMemberRole(@Param('projectId') projectId: string, @Param('userId') targetUserId: string, @Body() body: UpdateProjectMemberRoleDto, @CurrentUser() user: any, @Req() req: any) {
     if (!body.role) {
       throw new HttpException({ message: 'role is required' }, HttpStatus.BAD_REQUEST);
     }
     return this.projectService.updateMemberRole(projectId, targetUserId, body.role, user.userId, req.ip);
   }
 
+  @ApiOperation({ summary: 'Remove a member from the project' })
+  @ApiParam({ name: 'slug', description: 'Workspace slug', example: 'acme-corp' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', example: 'uuid-here' })
+  @ApiParam({ name: 'userId', description: 'User ID to remove', example: 'uuid-here' })
+  @ApiResponse({ status: 200, description: 'Member removed.' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   @UseGuards(ProjectRoleGuard)
   @RequireProjectRole(Role.Admin)
   @Delete(':projectId/members/:userId')

@@ -1,1 +1,1 @@
-# API Documentation — Coming Soon
+# Task Tracker API Documentation\n\nVersion: 1.0\n\nGenerated automatically from Swagger decorators.\n\n## activity\n\n## app\n\n## Audit Logs\n\n## Auth\n\n## Calendar\n\n## Chat\n\n## Conversations\n\n## Dashboard\n\n## Health Check\n\n## Notifications\n\n## Projects\n\n## Search\n\n## Tasks\n\n## Users\n\n## Workload\n\n## Workspaces\n\n
