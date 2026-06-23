@@ -3,24 +3,59 @@ const path = require('path');
 
 const apiDir = path.join(__dirname, 'apps', 'api', 'src');
 
-function getAllControllers(dir, fileList = []) {
+function getAllFiles(dir, ext, fileList = []) {
+  if (!fs.existsSync(dir)) return fileList;
   const files = fs.readdirSync(dir);
   for (const file of files) {
     const filePath = path.join(dir, file);
     if (fs.statSync(filePath).isDirectory()) {
-      getAllControllers(filePath, fileList);
-    } else if (file.endsWith('.controller.ts')) {
+      getAllFiles(filePath, ext, fileList);
+    } else if (file.endsWith(ext)) {
       fileList.push(filePath);
     }
   }
   return fileList;
 }
 
-const controllers = getAllControllers(apiDir);
+const controllers = getAllFiles(apiDir, '.controller.ts');
+const dtoFiles = getAllFiles(apiDir, '.dto.ts');
 
-let md = '# Task Tracker API Documentation\\n\\n';
-md += 'Version: 1.0\\n\\n';
-md += 'Generated automatically from Swagger decorators.\\n\\n';
+const dtos = {};
+
+// Parse all DTOs
+for (const file of dtoFiles) {
+  const content = fs.readFileSync(file, 'utf8');
+  const classMatches = [...content.matchAll(/class\s+([A-Za-z0-9_]+)\s*(?:implements|extends)?[^{]*{([\s\S]*?)^}/gm)];
+  for (const match of classMatches) {
+    const className = match[1];
+    const classBody = match[2];
+    
+    const fields = [];
+    const fieldMatches = [...classBody.matchAll(/@ApiProperty(?:Optional)?\(\{([^}]*)\}\)\s*(?:[^@]*?)\s+([A-Za-z0-9_]+)[!?:;]*\s*([^;]*)/g)];
+    
+    for (const fMatch of fieldMatches) {
+      const propsStr = fMatch[1];
+      const fieldName = fMatch[2];
+      
+      let description = '';
+      const descMatch = propsStr.match(/description:\s*['"]([^'"]+)['"]/);
+      if (descMatch) description = descMatch[1];
+      
+      const isRequired = !fMatch[0].includes('@ApiPropertyOptional') && !fieldName.includes('?');
+      let type = 'string';
+      if (fMatch[3].includes('number')) type = 'number';
+      if (fMatch[3].includes('boolean')) type = 'boolean';
+      if (fMatch[3].includes('Date')) type = 'string (date)';
+      if (fMatch[3].includes('[]')) type += '[]';
+      
+      fields.push({ name: fieldName, type, required: isRequired, description });
+    }
+    dtos[className] = fields;
+  }
+}
+
+// Map tags to endpoints
+const endpointsByTag = {};
 
 const methods = ['Get', 'Post', 'Patch', 'Delete', 'Put'];
 
@@ -35,10 +70,9 @@ for (const file of controllers) {
   const tagMatch = content.match(/@ApiTags\(['"]([^'"]+)['"]/);
   if (tagMatch) tag = tagMatch[1];
 
-  md += '## ' + tag + '\\n\\n';
+  if (!endpointsByTag[tag]) endpointsByTag[tag] = [];
 
-  const endpoints = [];
-  const lines = content.split('\\n');
+  const lines = content.split('\n');
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -82,8 +116,12 @@ for (const file of controllers) {
       fullPath = fullPath.split('//').join('/');
 
       let summary = 'No summary';
-      const params = [];
+      const queryParams = [];
+      const pathParams = [];
       const responses = [];
+      let isAuthRequired = content.includes('@ApiBearerAuth') || content.includes('JwtAuthGuard');
+      let rateLimit = 'Standard limits apply';
+      let requestBodyDto = null;
       
       for (let j = i - 1; j >= 0 && lines[j].trim().startsWith('@'); j--) {
         const decLine = lines[j].trim();
@@ -92,40 +130,101 @@ for (const file of controllers) {
         if (summaryMatch) summary = summaryMatch[1];
         
         const paramMatch = decLine.match(/@ApiParam\(\{.*name:\s*['"]([^'"]+)['"]/);
-        if (paramMatch) params.push({ name: paramMatch[1], in: 'path', req: true });
+        if (paramMatch) pathParams.push({ name: paramMatch[1], description: paramMatch[0].match(/description:\s*['"]([^'"]+)['"]/) ? paramMatch[0].match(/description:\s*['"]([^'"]+)['"]/)[1] : '' });
         
         const queryMatch = decLine.match(/@ApiQuery\(\{.*name:\s*['"]([^'"]+)['"]/);
-        if (queryMatch) params.push({ name: queryMatch[1], in: 'query', req: !decLine.includes('required: false') });
+        if (queryMatch) queryParams.push({ name: queryMatch[1], req: !decLine.includes('required: false') });
         
         const resMatch = decLine.match(/@ApiResponse\(\{.*status:\s*(\d+).*description:\s*['"]([^'"]+)['"]/);
         if (resMatch) responses.push({ status: resMatch[1], desc: resMatch[2] });
+
+        if (decLine.includes('@ApiBearerAuth')) isAuthRequired = true;
+        if (decLine.includes('@Throttle')) rateLimit = 'Custom rate limit';
       }
 
-      endpoints.push({ httpMethod, routePath: fullPath, summary, params: params.reverse(), responses: responses.reverse() });
+      // Look forward to find @Body() dto type
+      for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+        if (lines[j].includes('{')) {
+           const bodyMatch = lines[j].match(/@Body\(\)\s*[A-Za-z0-9_]+\s*:\s*([A-Za-z0-9_]+)/);
+           if (bodyMatch) requestBodyDto = bodyMatch[1];
+           break;
+        }
+      }
+
+      endpointsByTag[tag].push({
+        httpMethod,
+        routePath: fullPath,
+        summary,
+        pathParams: pathParams.reverse(),
+        queryParams: queryParams.reverse(),
+        responses: responses.reverse(),
+        isAuthRequired,
+        rateLimit,
+        requestBodyDto
+      });
     }
   }
+}
 
-  for (const ep of endpoints) {
-    md += '### [' + ep.httpMethod + '] ' + ep.routePath + '\\n\\n';
-    md += '**Summary**: ' + ep.summary + '\\n\\n';
+let md = '# Task Tracker — API Documentation\n\n';
+md += '> Generated from OpenAPI spec. Interactive version available at `http://localhost:3000/api/docs`.\n\n';
+md += '## Table of Contents\n';
+
+const sortedTags = Object.keys(endpointsByTag).sort();
+for (const tag of sortedTags) {
+  const anchor = tag.toLowerCase().replace(/\s+/g, '-');
+  md += `- [${tag}](#${anchor})\n`;
+}
+md += '\n---\n\n';
+
+for (const tag of sortedTags) {
+  md += `## ${tag}\n\n`;
+  
+  for (const ep of endpointsByTag[tag]) {
+    md += `### ${ep.httpMethod} ${ep.routePath}\n`;
+    md += `**Description:** ${ep.summary}\n`;
+    md += `**Auth required:** ${ep.isAuthRequired ? 'Yes' : 'No'}\n`;
+    md += `**Rate limit:** ${ep.rateLimit}\n\n`;
     
-    if (ep.params.length > 0) {
-      md += '| Parameter | In | Required |\\n';
-      md += '|---|---|---|\\n';
-      for (const p of ep.params) {
-        md += '| ' + p.name + ' | ' + p.in + ' | ' + (p.req ? 'Yes' : 'No') + ' |\\n';
+    if (ep.queryParams.length > 0) {
+      md += '**Query Parameters:**\n';
+      md += '| Parameter | Type | Required | Description |\n';
+      md += '|---|---|---|---|\n';
+      for (const q of ep.queryParams) {
+        md += `| ${q.name} | string | ${q.req ? 'Yes' : 'No'} | - |\n`;
       }
-      md += '\\n';
+      md += '\n';
     }
-    
+
+    if (ep.requestBodyDto && dtos[ep.requestBodyDto]) {
+      md += '**Request Body:**\n';
+      md += '| Field | Type | Required | Description |\n';
+      md += '|---|---|---|---|\n';
+      for (const field of dtos[ep.requestBodyDto]) {
+        md += `| ${field.name} | ${field.type} | ${field.required ? 'Yes' : 'No'} | ${field.description} |\n`;
+      }
+      md += '\n';
+    }
+
     if (ep.responses.length > 0) {
-      md += '| Status | Description |\\n';
-      md += '|---|---|\\n';
-      for (const r of ep.responses) {
-        md += '| ' + r.status + ' | ' + r.desc + ' |\\n';
+      const successRes = ep.responses.find(r => r.status.startsWith('2'));
+      if (successRes) {
+        md += `**Success Response (${successRes.status}):**\n`;
+        md += '```json\n{\n  "message": "Success"\n}\n```\n\n';
       }
-      md += '\\n';
+
+      const errorResponses = ep.responses.filter(r => !r.status.startsWith('2'));
+      if (errorResponses.length > 0) {
+        md += '**Error Responses:**\n';
+        md += '| Code | Description |\n';
+        md += '|---|---|\n';
+        for (const r of errorResponses) {
+          md += `| ${r.status} | ${r.desc} |\n`;
+        }
+        md += '\n';
+      }
     }
+    md += '---\n\n';
   }
 }
 
@@ -135,4 +234,4 @@ if (!fs.existsSync(docsDir)) {
 }
 
 fs.writeFileSync(path.join(docsDir, 'api-documentation.md'), md);
-console.log('Successfully generated docs/api/api-documentation.md');
+console.log('Successfully generated complete docs/api/api-documentation.md');
