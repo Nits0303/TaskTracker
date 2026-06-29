@@ -30,7 +30,6 @@ export class WorkloadService {
         user: {
           include: {
             assignedTasks: { where: { projectId } },
-            calendarBlocks: true,
             projectMembers: { 
               where: { project: { workspaceId: workspace.id } },
               include: { project: true }
@@ -40,27 +39,13 @@ export class WorkloadService {
       }
     });
 
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 7);
-
     const results = members.map((m: any) => {
       const tasks = m.user.assignedTasks;
       const totalTasks = tasks.length;
       const completedTasks = tasks.filter((t: any) => t.status === 'Completed').length;
       
-      const blocks = m.user.calendarBlocks;
-      const projectBlocks = blocks.filter((b: any) => b.taskId && tasks.find((t: any) => t.id === b.taskId));
-      const slotsBooked = projectBlocks.length;
-
-      const weekBlocks = blocks.filter((b: any) => b.startDatetime >= startOfWeek && b.endDatetime < endOfWeek);
-      const totalHours = weekBlocks.reduce((sum: number, b: any) => {
-        return sum + (b.endDatetime.getTime() - b.startDatetime.getTime()) / (1000 * 60 * 60);
-      }, 0);
+      const slotsBooked = 0;
+      const totalHours = 0;
 
       const projects = m.user.projectMembers.map((pm: any) => pm.project.name);
 
@@ -75,7 +60,7 @@ export class WorkloadService {
         tasksAssigned: totalTasks,
         completedTasks,
         timeSlotsBooked: slotsBooked,
-        hoursThisWeek: Math.round(totalHours * 10) / 10,
+        hoursThisWeek: totalHours,
         projects,
         workloadLevel: this.getWorkloadLevel(totalTasks)
       };
@@ -112,7 +97,6 @@ export class WorkloadService {
         user: {
           include: {
             assignedTasks: { where: { project: { workspaceId: workspace.id } } },
-            calendarBlocks: true,
             projectMembers: { 
               where: { project: { workspaceId: workspace.id } },
               include: { project: true }
@@ -122,27 +106,13 @@ export class WorkloadService {
       }
     });
 
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 7);
-
     const results = members.map((m: any) => {
       const tasks = m.user.assignedTasks;
       const totalTasks = tasks.length;
       const completedTasks = tasks.filter((t: any) => t.status === 'Completed').length;
       
-      const blocks = m.user.calendarBlocks;
-      const workspaceBlocks = blocks.filter((b: any) => b.taskId && tasks.find((t: any) => t.id === b.taskId));
-      const slotsBooked = workspaceBlocks.length;
-
-      const weekBlocks = blocks.filter((b: any) => b.startDatetime >= startOfWeek && b.endDatetime < endOfWeek);
-      const totalHours = weekBlocks.reduce((sum: number, b: any) => {
-        return sum + (b.endDatetime.getTime() - b.startDatetime.getTime()) / (1000 * 60 * 60);
-      }, 0);
+      const slotsBooked = 0;
+      const totalHours = 0;
 
       const projects = m.user.projectMembers.map((pm: any) => {
         const pTasks = tasks.filter((t: any) => t.projectId === pm.projectId).length;
@@ -160,7 +130,7 @@ export class WorkloadService {
         tasksAssigned: totalTasks,
         completedTasks,
         timeSlotsBooked: slotsBooked,
-        hoursThisWeek: Math.round(totalHours * 10) / 10,
+        hoursThisWeek: totalHours,
         projects,
         workloadLevel: this.getWorkloadLevel(totalTasks)
       };

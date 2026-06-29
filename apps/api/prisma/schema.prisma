@@ -52,22 +52,6 @@ enum ActivityEventType {
   AttachmentAdded
   MemberJoined
   MemberRemoved
-  MeetingRequested
-  MeetingAccepted
-  MeetingDeclined
-}
-
-enum MeetingStatus {
-  Pending
-  Accepted
-  Declined
-  Cancelled
-}
-
-enum ParticipantStatus {
-  Pending
-  Accepted
-  Declined
 }
 
 enum ChannelType {
@@ -95,14 +79,12 @@ model User {
   ownedWorkspaces     Workspace[]
   workspaceMembers    WorkspaceMember[]
   projectMembers      ProjectMember[]
-  assignedTasks       Task[]
+  assignedTasks       Task[]            @relation("AssignedTasks")
+  tasksCreated        Task[]            @relation("TaskCreator")
   assignedSubTasks    SubTask[]
   comments            Comment[]
   attachments         Attachment[]
   notifications       Notification[]
-  meetingRequests     MeetingRequest[]
-  meetingParticipants MeetingParticipant[]
-  calendarBlocks      CalendarBlock[]
   notificationPref    NotificationPreference?
   pushSubscription    PushSubscription?
   passwordResetTokens PasswordResetToken[]
@@ -130,7 +112,6 @@ model Workspace {
 
   members         WorkspaceMember[]
   projects        Project[]
-  meetingRequests MeetingRequest[]
   invites         Invite[]
   channels        Channel[]
   auditLogs       AuditLog[]
@@ -169,7 +150,6 @@ model Project {
   members          ProjectMember[]
   tasks            Task[]
   activities       ActivityEvent[]
-  meetingRequests  MeetingRequest[]
   channels         Channel[]
   projectChatMutes ProjectChatMute[]
   searchVector     Unsupported("tsvector")?
@@ -196,14 +176,14 @@ model Task {
   status       TaskStatus   @default(Todo)
   priority     TaskPriority @default(Medium)
   dueDate      DateTime?
-  startTime    DateTime?
-  endTime      DateTime?
   sortOrder    Int?
   label        String?
   projectId    String
   project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assigneeId   String?
-  assignee     User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee     User?        @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creatorId    String?
+  creator      User?        @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
   parentTaskId String?
   parentTask   Task?        @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
   reminderSent Boolean      @default(false)
@@ -216,7 +196,6 @@ model Task {
   comments       Comment[]
   attachments    Attachment[]
   activities     ActivityEvent[]
-  calendarBlocks CalendarBlock[]
 
   @@index([projectId, status])
   @@index([dueDate])
@@ -308,7 +287,6 @@ model NotificationPreference {
   inAppMentions        Boolean  @default(true)
   inAppTaskDeadlines   Boolean  @default(true)
   inAppTaskUpdates     Boolean  @default(true)
-  inAppCalendarEvents  Boolean  @default(true)
   inAppMemberJoined    Boolean  @default(true)
   inAppDirectMessages  Boolean  @default(true)
 
@@ -327,55 +305,6 @@ model PushSubscription {
   updatedAt DateTime @updatedAt
 }
 
-model MeetingRequest {
-  id            String        @id @default(uuid())
-  requesterId   String
-  requester     User          @relation(fields: [requesterId], references: [id], onDelete: Cascade)
-  workspaceId   String
-  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  projectId     String?
-  project       Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title         String
-  agenda        String?
-  startDatetime DateTime
-  endDatetime   DateTime
-  status        MeetingStatus @default(Pending)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  participants   MeetingParticipant[]
-  calendarBlocks CalendarBlock[]
-}
-
-model MeetingParticipant {
-  id               String            @id @default(uuid())
-  meetingRequestId String
-  meetingRequest   MeetingRequest    @relation(fields: [meetingRequestId], references: [id], onDelete: Cascade)
-  userId           String
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status           ParticipantStatus @default(Pending)
-  respondedAt      DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-
-  @@unique([meetingRequestId, userId])
-}
-
-model CalendarBlock {
-  id               String          @id @default(uuid())
-  userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  taskId           String?
-  task             Task?           @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  meetingRequestId String?
-  meetingRequest   MeetingRequest? @relation(fields: [meetingRequestId], references: [id], onDelete: Cascade)
-  startDatetime    DateTime
-  endDatetime      DateTime
-  label            String
-  description      String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-}
 
 model Invite {
   id          String    @id @default(uuid())
@@ -552,9 +481,6 @@ enum AuditEventType {
   // Attachments (project level)
   ATTACHMENT_UPLOADED
   ATTACHMENT_DELETED
-
-  // Calendar (project level)
-  MEETING_REQUESTED
 
   // Project Settings (project level)
   PROJECT_SETTINGS_CHANGED

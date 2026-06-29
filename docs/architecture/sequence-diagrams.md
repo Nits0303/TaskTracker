@@ -111,49 +111,6 @@ sequenceDiagram
     UB->>UB: UserB's UI re-renders with updated task title
 ```
 
-## Meeting Request + Accept Flow
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#3b82f6', 'actorTextColor': '#fff', 'activationBkgColor': '#8b5cf6', 'textColor': '#fff', 'signalTextColor': '#fff', 'noteTextColor': '#fff', 'messageTextColor': '#fff'}}}%%
-sequenceDiagram
-    participant Req as Requester Browser
-    participant Part as Participant Browser
-    participant Ctrl as NestJS CalendarController
-    participant Notif as NestJS NotificationService
-    participant MQ as BullMQ
-    participant DB as PostgreSQL
-    participant Redis as Redis
-    participant IO as Socket.IO
-
-    Req->>Ctrl: GET /calendar/team — returns busy/free slots per member
-    Req->>Req: Requester clicks a free slot on Participant's column
-    Req->>Req: Meeting request form opens pre-filled with time slot
-    Req->>Req: Requester fills title, agenda, submits
-    Req->>Ctrl: POST /meetings
-    Ctrl->>DB: Checks for conflicts — queries CalendarBlock and MeetingParticipant for overlapping slots
-    DB-->>Ctrl: No conflict
-    Ctrl->>DB: MeetingRequest created in PostgreSQL with status Pending
-    Ctrl->>DB: MeetingParticipant record created for each participant with status Pending
-    Ctrl->>DB: Persistent Notification record created for each participant
-    Ctrl->>Notif: NotificationService.dispatch() called (fire and forget)
-    Notif->>MQ: BullMQ job queued
-    Ctrl->>IO: RealtimeGateway emits meeting:requested to each participant's personal room user:{userId}
-    IO-->>Part: Participant's browser receives meeting:requested via Socket.IO
-    Part->>Part: Notification bell badge increments in real time
-    Part->>Part: Participant opens notification bell -> sees "Requires action" card
-    Part->>Part: Participant clicks Accept
-    Part->>Ctrl: PATCH /meetings/:meetingId/respond with { response: "Accepted" }
-    Ctrl->>DB: MeetingParticipant record updated to Accepted
-    Ctrl->>DB: NestJS checks if ALL participants have accepted
-    DB-->>Ctrl: All accepted
-    Ctrl->>DB: MeetingRequest status updated to Accepted
-    Ctrl->>DB: CalendarBlock created for every participant
-    Ctrl->>IO: RealtimeGateway emits meeting:accepted to all participants' personal rooms
-    IO-->>Req: Browsers receive meeting:accepted
-    IO-->>Part: Browsers receive meeting:accepted
-    Req->>Req: Calendars update in real time showing confirmed meeting block
-    Part->>Part: Calendars update in real time showing confirmed meeting block
-```
 
 ## File Upload to MinIO
 

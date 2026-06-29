@@ -36,7 +36,6 @@ async function bootstrap() {
     .addTag('Tasks', 'Task CRUD, sub-tasks, comments, attachments')
     .addTag('Chat', 'Channels, messages, threads, read receipts')
     .addTag('Conversations', 'Direct messages between workspace members')
-    .addTag('Calendar', 'Calendar blocks, meeting requests, availability')
     .addTag('Dashboard', 'Project and workspace statistics')
     .addTag('Workload', 'Member workload and capacity data')
     .addTag('Search', 'Full-text and trigram search across tasks, projects, members')

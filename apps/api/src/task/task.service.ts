@@ -60,7 +60,7 @@ export class TaskService {
   // --- Ownership check ---
   async canMutateTask(userId: string, projectId: string, taskId: string): Promise<boolean> {
     const [task, projectMember] = await Promise.all([
-      this.prisma.task.findUnique({ where: { id: taskId }, select: { assigneeId: true } }),
+      this.prisma.task.findUnique({ where: { id: taskId, projectId }, select: { assigneeId: true } }),
       this.prisma.projectMember.findUnique({
         where: { userId_projectId: { userId, projectId } }
       })
@@ -89,12 +89,11 @@ export class TaskService {
       status: true,
       priority: true,
       dueDate: true,
-      startTime: true,
-      endTime: true,
       sortOrder: true,
       label: true,
       projectId: true,
       assigneeId: true,
+      creatorId: true,
       parentTaskId: true,
       createdAt: true,
       updatedAt: true,
@@ -112,6 +111,26 @@ export class TaskService {
 
   // --- Task CRUD ---
   async createTask(userId: string, projectId: string, data: any, socketId?: string) {
+    let isAdmin = false;
+    const projectMember = await this.prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } }
+    });
+    if (projectMember && (projectMember.role === Role.Admin || projectMember.role === Role.Owner)) {
+      isAdmin = true;
+    } else {
+      const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
+      if (project) {
+        const wsMember = await this.prisma.workspaceMember.findUnique({
+          where: { userId_workspaceId: { userId, workspaceId: project.workspaceId } }
+        });
+        if (wsMember && (wsMember.role === Role.Admin || wsMember.role === Role.Owner)) isAdmin = true;
+      }
+    }
+
+    if (!isAdmin) {
+      data.assigneeId = userId;
+    }
+
     // Get highest sort order in target column
     const highestOrder = await this.prisma.task.findFirst({
       where: { projectId, status: data.status || TaskStatus.Todo },
@@ -126,30 +145,17 @@ export class TaskService {
         status: data.status || TaskStatus.Todo,
         priority: data.priority || 'Medium',
         dueDate: data.dueDate,
-        startTime: data.startTime,
-        endTime: data.endTime,
         sortOrder: (highestOrder?.sortOrder ?? -1) + 1,
         label: data.label,
         projectId,
         assigneeId: data.assigneeId,
+        creatorId: userId,
+        parentTaskId: data.parentTaskId,
       },
       include: {
         assignee: { select: { id: true, fullName: true, avatarUrl: true, email: true } }
       }
     });
-
-    // Create CalendarBlock if time range provided
-    if (data.assigneeId && data.startTime && data.endTime) {
-      await this.prisma.calendarBlock.create({
-        data: {
-          userId: data.assigneeId,
-          taskId: task.id,
-          startDatetime: data.startTime,
-          endDatetime: data.endTime,
-          label: task.title,
-        }
-      });
-    }
 
     this.realtime.emitToProject(projectId, 'task:created', task, socketId);
     this.activity.logEvent({
@@ -205,9 +211,9 @@ export class TaskService {
     }));
   }
 
-  async getTask(taskId: string) {
+  async getTask(taskId: string, projectId?: string) {
     const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
+      where: { id: taskId, ...(projectId && { projectId }) },
       include: {
         assignee: { select: { id: true, fullName: true, avatarUrl: true, email: true } },
         checklistItems: {
@@ -234,6 +240,35 @@ export class TaskService {
 
     if (!oldTask) throw new NotFoundException('Task not found');
 
+    let canBypass = false;
+    const projectMember = await this.prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } }
+    });
+    let projectForTransitions: any = null;
+    if (projectMember && (projectMember.role === Role.Admin || projectMember.role === Role.Owner)) {
+      canBypass = true;
+    } else {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { workspaceId: true, transitionMode: true, customTransitions: true }
+      });
+      projectForTransitions = project;
+      if (project) {
+        const workspaceMember = await this.prisma.workspaceMember.findUnique({
+          where: { userId_workspaceId: { userId, workspaceId: project.workspaceId } }
+        });
+        if (workspaceMember && (workspaceMember.role === Role.Owner || workspaceMember.role === Role.Admin)) {
+          canBypass = true;
+        }
+      }
+    }
+
+    if (data.assigneeId !== undefined && data.assigneeId !== oldTask.assigneeId) {
+      if (!canBypass && data.assigneeId && data.assigneeId !== userId) {
+        throw new ForbiddenException('Members cannot assign tasks to other members');
+      }
+    }
+
     if (data.version !== undefined && data.version !== oldTask.version) {
       const fullTask = await this.getTask(taskId);
       throw new ConflictException({
@@ -243,29 +278,6 @@ export class TaskService {
     }
 
     if (data.status !== undefined && data.status !== oldTask.status) {
-      let canBypass = false;
-      const projectMember = await this.prisma.projectMember.findUnique({
-        where: { userId_projectId: { userId, projectId } }
-      });
-      let projectForTransitions: any = null;
-      if (projectMember && (projectMember.role === Role.Admin || projectMember.role === Role.Owner)) {
-        canBypass = true;
-      } else {
-        const project = await this.prisma.project.findUnique({
-          where: { id: projectId },
-          select: { workspaceId: true, transitionMode: true, customTransitions: true }
-        });
-        projectForTransitions = project;
-        if (project) {
-          const workspaceMember = await this.prisma.workspaceMember.findUnique({
-            where: { userId_workspaceId: { userId, workspaceId: project.workspaceId } }
-          });
-          if (workspaceMember && (workspaceMember.role === Role.Owner || workspaceMember.role === Role.Admin)) {
-            canBypass = true;
-          }
-        }
-      }
-
       if (!canBypass) {
         if (!projectForTransitions) {
           projectForTransitions = await this.prisma.project.findUnique({
@@ -304,22 +316,6 @@ export class TaskService {
         assignee: { select: { id: true, fullName: true, avatarUrl: true, email: true } }
       }
     });
-
-    // Handle CalendarBlock updates on assignee change
-    if (data.assigneeId !== undefined && data.assigneeId !== oldTask?.assigneeId) {
-      await this.prisma.calendarBlock.deleteMany({ where: { taskId } });
-      if (data.assigneeId && updated.startTime && updated.endTime) {
-        await this.prisma.calendarBlock.create({
-          data: {
-            userId: data.assigneeId,
-            taskId,
-            startDatetime: updated.startTime,
-            endDatetime: updated.endTime,
-            label: updated.title,
-          }
-        });
-      }
-    }
 
     const delta: any = { id: taskId };
     for (const key of Object.keys(data)) {
@@ -434,6 +430,15 @@ export class TaskService {
   }
 
   async reorderTask(projectId: string, taskId: string, data: { sortOrder: number; updates?: { id: string; sortOrder: number }[] }, socketId?: string) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundException('Task not found in this project');
+
+    if (data.updates?.length) {
+      const ids = data.updates.map(u => u.id);
+      const count = await this.prisma.task.count({ where: { id: { in: ids }, projectId } });
+      if (count !== ids.length) throw new ForbiddenException('Some tasks do not belong to this project');
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.task.update({
         where: { id: taskId },
@@ -474,7 +479,12 @@ export class TaskService {
       }
     }
 
-    if (!isAdmin) throw new ForbiddenException('Only project Admins can delete tasks');
+    const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundException('Task not found in this project');
+
+    if (!isAdmin && task.creatorId !== userId) {
+      throw new ForbiddenException('Only project Admins or the task creator can delete tasks');
+    }
 
     // Delete MinIO attachments first
     const attachments = await this.prisma.attachment.findMany({ where: { taskId }, select: { storageKey: true } });
@@ -516,6 +526,9 @@ export class TaskService {
 
   // --- SubTask CRUD ---
   async createSubTask(userId: string, projectId: string, taskId: string, data: any, socketId?: string) {
+    const parentTask = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!parentTask) throw new NotFoundException('Task not found in this project');
+
     const subtask = await this.prisma.subTask.create({
       data: {
         title: data.title,
@@ -531,8 +544,8 @@ export class TaskService {
     await this.broadcastSubtaskCounts(projectId, taskId, socketId);
 
     const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
-    const parentTask = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
     
+
     if (project && parentTask) {
       await this.auditLogService.log({
         event: AuditEventType.SUBTASK_CREATED,
@@ -559,7 +572,11 @@ export class TaskService {
   }
 
   async updateSubTask(userId: string, projectId: string, taskId: string, subtaskId: string, data: any, socketId?: string) {
-    const oldSubtask = await this.prisma.subTask.findUnique({ where: { id: subtaskId }, select: { assigneeId: true, title: true } });
+    const parentTask = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!parentTask) throw new NotFoundException('Task not found in this project');
+
+    const oldSubtask = await this.prisma.subTask.findUnique({ where: { id: subtaskId, parentTaskId: taskId }, select: { assigneeId: true, title: true } });
+    if (!oldSubtask) throw new NotFoundException('Subtask not found');
     const subtask = await this.prisma.subTask.update({
       where: { id: subtaskId },
       data: {
@@ -596,6 +613,12 @@ export class TaskService {
   }
 
   async deleteSubTask(projectId: string, taskId: string, subtaskId: string, socketId?: string) {
+    const parentTask = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!parentTask) throw new NotFoundException('Task not found in this project');
+
+    const subtask = await this.prisma.subTask.findUnique({ where: { id: subtaskId, parentTaskId: taskId } });
+    if (!subtask) throw new NotFoundException('Subtask not found');
+
     await this.prisma.subTask.delete({ where: { id: subtaskId } });
     this.realtime.emitToProject(projectId, 'subtask:deleted', { id: subtaskId, parentTaskId: taskId }, socketId);
     await this.broadcastSubtaskCounts(projectId, taskId, socketId);
@@ -603,7 +626,12 @@ export class TaskService {
   }
 
   // --- Comments ---
-  async getComments(taskId: string) {
+  async getComments(taskId: string, projectId?: string) {
+    if (projectId) {
+      const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+      if (!task) throw new NotFoundException('Task not found in this project');
+    }
+
     const comments = await this.prisma.comment.findMany({
       where: { taskId, parentCommentId: null },
       include: {
@@ -622,6 +650,9 @@ export class TaskService {
   }
 
   async createComment(userId: string, projectId: string, taskId: string, data: any, socketId?: string) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundException('Task not found in this project');
+
     const comment = await this.prisma.comment.create({
       data: {
         body: data.body,
@@ -642,10 +673,6 @@ export class TaskService {
       taskId,
     });
 
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-      select: { assigneeId: true, title: true }
-    });
 
     if (task?.assigneeId && task.assigneeId !== userId) {
       await this.notificationService.dispatch({
@@ -672,10 +699,10 @@ export class TaskService {
   }
 
   async deleteComment(userId: string, projectId: string, taskId: string, commentId: string, socketId?: string) {
-    const comment = await this.prisma.comment.findUnique({
-      where: { id: commentId },
-      select: { authorId: true }
-    });
+    const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundException('Task not found in this project');
+
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId, taskId } });
     if (!comment) throw new NotFoundException('Comment not found');
 
     const isAuthor = comment.authorId === userId;
@@ -693,14 +720,14 @@ export class TaskService {
       const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { workspaceId: true } });
       if (project) {
         const originalAuthor = await this.prisma.user.findUnique({ where: { id: comment.authorId }, select: { fullName: true } });
-        const task = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
+        const taskObj = await this.prisma.task.findUnique({ where: { id: taskId }, select: { title: true } });
         await this.auditLogService.log({
           event: AuditEventType.COMMENT_DELETED_BY_ADMIN,
           workspaceId: project.workspaceId,
           actorId: userId,
           resourceType: 'Task',
           resourceId: taskId,
-          metadata: { projectId, taskName: task?.title, originalAuthorName: originalAuthor?.fullName }
+          metadata: { projectId, taskName: taskObj?.title, originalAuthorName: originalAuthor?.fullName }
         });
       }
     }
@@ -709,7 +736,12 @@ export class TaskService {
   }
 
   // --- Attachments ---
-  async getAttachments(taskId: string) {
+  async getAttachments(taskId: string, projectId?: string) {
+    if (projectId) {
+      const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+      if (!task) throw new NotFoundException('Task not found in this project');
+    }
+
     const attachments = await this.prisma.attachment.findMany({
       where: { taskId },
       include: {
@@ -740,6 +772,9 @@ export class TaskService {
     file: Express.Multer.File,
     socketId?: string
   ) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundException('Task not found in this project');
+
     const storageKey = `${workspaceSlug}/${projectId}/${taskId}/${Date.now()}-${file.originalname}`;
 
     // Ensure bucket exists

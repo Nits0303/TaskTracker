@@ -47,7 +47,6 @@ erDiagram
         Boolean inAppMentions
         Boolean inAppTaskDeadlines
         Boolean inAppTaskUpdates
-        Boolean inAppCalendarEvents
         Boolean inAppMemberJoined
         Boolean inAppDirectMessages
         DateTime createdAt
@@ -156,8 +155,6 @@ erDiagram
     Comment ||--o{ Comment : replies
     Task ||--o{ Attachment : has
     User ||--o{ Attachment : uploader
-    Task ||--o{ CalendarBlock : has
-    User ||--o{ CalendarBlock : user
     Project {
         String id PK
     }
@@ -215,18 +212,7 @@ erDiagram
         String uploaderId FK
         DateTime createdAt
     }
-    CalendarBlock {
-        String id PK
-        String userId FK
-        String taskId FK "nullable"
-        String meetingRequestId FK "nullable"
-        DateTime startDatetime
-        DateTime endDatetime
-        String label
-        String description "nullable"
-        DateTime createdAt
-        DateTime updatedAt
-    }
+
 ```
 
 ## Domain 5 — Chat
@@ -313,50 +299,11 @@ erDiagram
     }
 ```
 
-## Domain 6 — Meetings & Calendar
-
-```mermaid
-%% MeetingStatus enum: Pending, Accepted, Declined, Cancelled
-%% ParticipantStatus enum: Pending, Accepted, Declined
-%%{init: {'theme': 'dark'}}%%
-erDiagram
-    Workspace ||--o{ MeetingRequest : has
-    Project ||--o{ MeetingRequest : has
-    User ||--o{ MeetingRequest : requester
-    MeetingRequest ||--o{ MeetingParticipant : has
-    User ||--o{ MeetingParticipant : user
-    Workspace { String id PK }
-    Project { String id PK }
-    User { String id PK }
-    MeetingRequest {
-        String id PK
-        String requesterId FK
-        String workspaceId FK
-        String projectId FK "nullable"
-        String title
-        String agenda "nullable"
-        DateTime startDatetime
-        DateTime endDatetime
-        MeetingStatus status
-        DateTime createdAt
-        DateTime updatedAt
-    }
-    MeetingParticipant {
-        String id PK
-        String meetingRequestId FK
-        String userId FK
-        ParticipantStatus status
-        DateTime respondedAt "nullable"
-        DateTime createdAt
-        DateTime updatedAt
-    }
-```
-
 ## Domain 7 — System
 
 ```mermaid
-%% ActivityEventType enum: TaskCreated, TaskUpdated, StatusChanged, TaskCompleted, CommentAdded, AttachmentAdded, MemberJoined, MemberRemoved, MeetingRequested, MeetingAccepted, MeetingDeclined
-%% AuditEventType enum: LOGIN_SUCCESS, LOGOUT, BRUTE_FORCE_DETECTED, RATE_LIMIT_VIOLATION, WORKSPACE_CREATED, WORKSPACE_UPDATED, WORKSPACE_ARCHIVED, WORKSPACE_DELETED, WORKSPACE_SETTINGS_CHANGED, WORKSPACE_MEMBER_INVITED, WORKSPACE_MEMBER_REMOVED, WORKSPACE_MEMBER_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_DELETED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, TASK_CREATED, TASK_DELETED, TASK_STATUS_CHANGED, TASK_ASSIGNEE_CHANGED, TASK_DESCRIPTION_CHANGED, TASK_DUE_DATE_CHANGED, SUBTASK_CREATED, SUBTASK_ASSIGNED, COMMENT_ADDED, COMMENT_DELETED_BY_ADMIN, ATTACHMENT_UPLOADED, ATTACHMENT_DELETED, MEETING_REQUESTED, PROJECT_SETTINGS_CHANGED, PROJECT_MEMBER_ROLE_CHANGED
+%% ActivityEventType enum: TaskCreated, TaskUpdated, StatusChanged, TaskCompleted, CommentAdded, AttachmentAdded, MemberJoined, MemberRemoved
+%% AuditEventType enum: LOGIN_SUCCESS, LOGOUT, BRUTE_FORCE_DETECTED, RATE_LIMIT_VIOLATION, WORKSPACE_CREATED, WORKSPACE_UPDATED, WORKSPACE_ARCHIVED, WORKSPACE_DELETED, WORKSPACE_SETTINGS_CHANGED, WORKSPACE_MEMBER_INVITED, WORKSPACE_MEMBER_REMOVED, WORKSPACE_MEMBER_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_DELETED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, TASK_CREATED, TASK_DELETED, TASK_STATUS_CHANGED, TASK_ASSIGNEE_CHANGED, TASK_DESCRIPTION_CHANGED, TASK_DUE_DATE_CHANGED, SUBTASK_CREATED, SUBTASK_ASSIGNED, COMMENT_ADDED, COMMENT_DELETED_BY_ADMIN, ATTACHMENT_UPLOADED, ATTACHMENT_DELETED, PROJECT_SETTINGS_CHANGED, PROJECT_MEMBER_ROLE_CHANGED
 %%{init: {'theme': 'dark'}}%%
 erDiagram
     Project ||--o{ ActivityEvent : has

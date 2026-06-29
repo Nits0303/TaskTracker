@@ -25,13 +25,11 @@ export class NotificationController {
       take,
     });
 
-    const persistent = notifications.filter(n => n.type === 'meeting_request');
-    const standard = notifications.filter(n => n.type !== 'meeting_request');
     const unreadCount = await this.prisma.notification.count({
       where: { recipientId: userId, isDismissed: false, isRead: false }
     });
 
-    return { persistent, standard, unreadCount };
+    return { notifications, unreadCount };
   }
 
   @ApiOperation({ summary: 'Mark a notification as read' })
@@ -138,7 +136,6 @@ export class NotificationController {
     if (body.inAppMentions !== undefined) data.inAppMentions = body.inAppMentions;
     if (body.inAppTaskDeadlines !== undefined) data.inAppTaskDeadlines = body.inAppTaskDeadlines;
     if (body.inAppTaskUpdates !== undefined) data.inAppTaskUpdates = body.inAppTaskUpdates;
-    if (body.inAppCalendarEvents !== undefined) data.inAppCalendarEvents = body.inAppCalendarEvents;
     if (body.inAppMemberJoined !== undefined) data.inAppMemberJoined = body.inAppMemberJoined;
     if (body.inAppDirectMessages !== undefined) data.inAppDirectMessages = body.inAppDirectMessages;
 

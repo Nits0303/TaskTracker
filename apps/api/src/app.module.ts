@@ -29,7 +29,6 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { REDIS_CLIENT, RedisModule } from './realtime/redis.module';
 import { ActivityModule } from './activity/activity.module';
 import { DashboardModule } from './dashboard/dashboard.module';
-import { CalendarModule } from './calendar/calendar.module';
 import { WorkloadModule } from './workload/workload.module';
 import { NotificationModule } from './notification/notification.module';
 import { UserModule } from './user/user.module';
@@ -62,7 +61,6 @@ import { HealthModule } from './health/health.module';
     RealtimeModule,
     ActivityModule,
     DashboardModule,
-    CalendarModule,
     WorkloadModule,
     NotificationModule,
     UserModule,

@@ -16,7 +16,7 @@ graph TD
     classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
 
     class Browser,Web frontend
-    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class API,Auth,Workspace,Project,Task,Chat,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
     class PostgreSQL,Pg,DbWrite database
     class Redis,SocketAdapter,RateLimit,Presence,Cache cache
     class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue
@@ -31,7 +31,6 @@ graph TD
         Project["Project Module"]
         Task["Task Module"]
         Chat["Chat Module"]
-        Calendar["Calendar Module"]
         Search["Search Module (PostgreSQL Full-Text + Trigram)"]
         Dashboard["Dashboard Module"]
         Notification["Notification Module"]
@@ -76,7 +75,7 @@ graph LR
     classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
 
     class Browser,Web frontend
-    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class API,Auth,Workspace,Project,Task,Chat,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
     class PostgreSQL,Pg,DbWrite database
     class Redis,SocketAdapter,RateLimit,Presence,Cache cache
     class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue
@@ -109,7 +108,7 @@ graph LR
     classDef storage fill:#6b7280,stroke:#4b5563,color:#fff
 
     class Browser,Web frontend
-    class API,Auth,Workspace,Project,Task,Chat,Calendar,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
+    class API,Auth,Workspace,Project,Task,Chat,Search,Dashboard,Notification,Activity,AuditLog,Health,Gateway,Api,Nest backend
     class PostgreSQL,Pg,DbWrite database
     class Redis,SocketAdapter,RateLimit,Presence,Cache cache
     class BullStorage,BullMQWorkers,ActivityWorker,NotifWorker,Queue queue

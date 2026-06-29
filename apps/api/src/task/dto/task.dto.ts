@@ -16,11 +16,6 @@ export class CreateTaskDto {
   @ApiPropertyOptional({ description: 'Due date (ISO string)', example: '2023-12-31T23:59:59.999Z' })
   dueDate?: Date | null;
 
-  @ApiPropertyOptional({ description: 'Start time (ISO string)', example: '2023-12-01T00:00:00.000Z' })
-  startTime?: Date | null;
-
-  @ApiPropertyOptional({ description: 'End time (ISO string)', example: '2023-12-31T23:59:59.999Z' })
-  endTime?: Date | null;
 
   @ApiPropertyOptional({ description: 'Sorting order', example: 1000 })
   sortOrder?: number | null;
@@ -48,11 +43,6 @@ export class UpdateTaskDto {
   @ApiPropertyOptional({ description: 'Due date (ISO string)', example: '2023-12-31T23:59:59.999Z' })
   dueDate?: Date | null;
 
-  @ApiPropertyOptional({ description: 'Start time (ISO string)', example: '2023-12-01T00:00:00.000Z' })
-  startTime?: Date | null;
-
-  @ApiPropertyOptional({ description: 'End time (ISO string)', example: '2023-12-31T23:59:59.999Z' })
-  endTime?: Date | null;
 
   @ApiPropertyOptional({ description: 'UUID of the assignee', example: '123e4567-e89b-12d3-a456-426614174000' })
   assigneeId?: string | null;

@@ -95,7 +95,7 @@ export class NotificationWorker implements OnModuleInit {
       if (data.type === 'mention' && !prefs.inAppMentions) return;
       if (data.type === 'due_reminder' && !prefs.inAppTaskDeadlines) return;
       if (data.type === 'task_updated' && !prefs.inAppTaskUpdates) return;
-      if (['meeting_request', 'meeting_response', 'meeting_cancelled'].includes(data.type) && !prefs.inAppCalendarEvents) return;
+      if (['mention', 'comment_mention'].includes(data.type) && !prefs.inAppMentions) return;
       if (data.type === 'member_joined' && !prefs.inAppMemberJoined) return;
       if (data.type === 'direct_message' && !prefs.inAppDirectMessages) return;
     }

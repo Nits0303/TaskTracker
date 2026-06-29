@@ -58,8 +58,8 @@ export class TaskController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   @Get(':taskId')
   @RequireProjectRole(Role.Viewer)
-  async getTask(@Param('taskId') taskId: string) {
-    return this.taskService.getTask(taskId);
+  async getTask(@Param('projectId') projectId: string, @Param('taskId') taskId: string) {
+    return this.taskService.getTask(taskId, projectId);
   }
 
   @ApiOperation({ summary: 'Update a specific task' })
@@ -154,8 +154,8 @@ export class TaskController {
   @ApiResponse({ status: 200, description: 'List of comments.' })
   @Get(':taskId/comments')
   @RequireProjectRole(Role.Viewer)
-  async getComments(@Param('taskId') taskId: string) {
-    return this.taskService.getComments(taskId);
+  async getComments(@Param('projectId') projectId: string, @Param('taskId') taskId: string) {
+    return this.taskService.getComments(taskId, projectId);
   }
 
   @ApiOperation({ summary: 'Create a comment on a task' })
@@ -193,8 +193,8 @@ export class TaskController {
   @ApiResponse({ status: 200, description: 'List of attachments.' })
   @Get(':taskId/attachments')
   @RequireProjectRole(Role.Viewer)
-  async getAttachments(@Param('taskId') taskId: string) {
-    return this.taskService.getAttachments(taskId);
+  async getAttachments(@Param('projectId') projectId: string, @Param('taskId') taskId: string) {
+    return this.taskService.getAttachments(taskId, projectId);
   }
 
   @ApiOperation({ summary: 'Upload an attachment for a task' })

@@ -44,8 +44,7 @@ export class UpdatePreferencesDto {
   @ApiPropertyOptional({ description: 'In-app notifications for task updates', example: true })
   inAppTaskUpdates?: boolean;
 
-  @ApiPropertyOptional({ description: 'In-app notifications for calendar events', example: true })
-  inAppCalendarEvents?: boolean;
+
 
   @ApiPropertyOptional({ description: 'In-app notifications when a member joins', example: true })
   inAppMemberJoined?: boolean;
