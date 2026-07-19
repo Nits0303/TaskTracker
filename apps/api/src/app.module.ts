@@ -38,6 +38,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { SearchModule } from './search/search.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { SamlModule } from './saml/saml.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { HealthModule } from './health/health.module';
     SearchModule,
     AuditModule,
     HealthModule,
+    SamlModule,
   ],
   controllers: [AppController],
   providers: [

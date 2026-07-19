@@ -1,3 +1,15 @@
 packages:
   - "apps/*"
   - "packages/*"
+allowBuilds:
+  # bcrypt is a native module used by auth.service.ts and saml.service.ts -
+  # without its build step require('bcrypt') throws at runtime.
+  # prisma/@prisma/engines are needed for `prisma generate` and migrations.
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  bcrypt: true
+  msgpackr-extract: false
+  prisma: true
+  sharp: true
+  unrs-resolver: false

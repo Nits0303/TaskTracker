@@ -33,6 +33,7 @@
     "@nestjs/terminus": "^11.1.1",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.26",
+    "@node-saml/node-saml": "^5.1.0",
     "@prisma/client": "^6.19.3",
     "@repo/shared": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",

@@ -26,7 +26,7 @@ import { SocketRateLimiterService } from '../common/services/socket-rate-limiter
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL ?? 'http://localhost:3100',
     credentials: true,
   },
 })

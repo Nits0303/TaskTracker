@@ -99,7 +99,7 @@ export class AuthController {
     this.setRefreshCookie(res, refreshToken);
     
     // Redirecting to the frontend workspaces
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/workspaces?token=${accessToken}`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3100'}/workspaces?token=${accessToken}`);
   }
 
   @ApiOperation({ summary: 'Create an invite for a workspace' })

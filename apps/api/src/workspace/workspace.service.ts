@@ -221,7 +221,7 @@ export class WorkspaceService {
       },
     });
 
-    const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3000';
+    const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3100';
     const inviteUrl = `${frontendUrl}/accept-invite?token=${token}`;
     
     const smtpHost = this.config.get('SMTP_HOST');

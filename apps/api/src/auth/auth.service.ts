@@ -252,7 +252,7 @@ export class AuthService {
       },
     });
 
-    const inviteUrl = `http://localhost:3000/accept-invite?token=${token}`;
+    const inviteUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:3100')}/accept-invite?token=${token}`;
     console.log(`[Email System Mock] Invite sent to ${dto.email}: ${inviteUrl}`);
 
     return { success: true, message: 'Invite sent successfully' };
@@ -401,7 +401,7 @@ export class AuthService {
           pass: this.configService.get('SMTP_PASS'),
         },
       });
-      const resetUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token=${token}`;
+      const resetUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:3100')}/reset-password?token=${token}`;
       await transporter.sendMail({
         from: this.configService.get('SMTP_FROM'),
         to: email,
@@ -409,7 +409,7 @@ export class AuthService {
         html: `<p>Hi ${user.fullName},</p><p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, ignore this email.</p>`,
       });
     } else {
-      const resetUrl = `http://localhost:3000/reset-password?token=${token}`;
+      const resetUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:3100')}/reset-password?token=${token}`;
       console.log(`[Email Mock] Password reset link for ${email}: ${resetUrl}`);
     }
 

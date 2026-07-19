@@ -19,6 +19,8 @@ import { NotificationModule } from '../notification/notification.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, GoogleStrategy],
-  exports: [JwtStrategy, PassportModule],
+  // AuthService is exported so the SAML SP module (Sprint 18) can reuse
+  // generateTokens() rather than re-implementing token minting.
+  exports: [JwtStrategy, PassportModule, AuthService],
 })
 export class AuthModule {}
