@@ -4,14 +4,16 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+// BadRequestException is used for both unconfigured SSO and invalid assertion
+// attribute values - see getSaml() and provisionAndLogin().
 import { ConfigService } from '@nestjs/config';
 import { SAML } from '@node-saml/node-saml';
 import { AuditEventType, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { AuditLogService } from '../audit/audit.service';
+import { SamlConfigService } from './saml-config.service';
 
 /**
  * Sprint 18: Task Tracker as a SAML 2.0 Service Provider, with just-in-time
@@ -47,43 +49,45 @@ export interface ProvisionResult {
 @Injectable()
 export class SamlService {
   private readonly logger = new Logger(SamlService.name);
-  private samlInstance: SAML | null = null;
+
+  // Cached SAML validators, one per workspace, keyed by the config they were
+  // built from. Sprint 20 allows trust config to change at runtime from the
+  // settings UI, so the key must include the certificate + audience - otherwise
+  // saving new config would silently keep validating against the old
+  // certificate until restart, which is the problem this sprint removes.
+  private samlInstances = new Map<string, { key: string; saml: SAML }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly auditLogService: AuditLogService,
     private readonly configService: ConfigService,
+    private readonly samlConfig: SamlConfigService,
   ) {}
 
   /**
-   * The IdP's public certificate - the sole trust anchor. Supports either an
-   * inline PEM (with literal \n escapes, which .env files force) or a path to a
-   * .pem file. The file path is preferred: multi-line PEM in .env is a common
-   * source of silent misconfiguration.
+   * Build (or reuse) the SAML validator from the current trust config. Config
+   * comes from the database when set via the settings UI, falling back to
+   * environment variables.
    */
-  private loadIdpCertificate(): string {
-    const certPath = this.configService.get<string>('SAML_IDP_CERT_PATH');
-    if (certPath) {
-      return fs.readFileSync(certPath, 'utf8').trim();
+  private async getSaml(workspaceSlug: string): Promise<SAML> {
+    const config = await this.samlConfig.resolve(workspaceSlug);
+    if (!config) {
+      throw new BadRequestException(
+        `Single sign-on is not configured for workspace "${workspaceSlug}". An owner can add an identity provider in that workspace's settings.`,
+      );
     }
-    const inline = this.configService.get<string>('SAML_IDP_CERT');
-    if (!inline) {
-      throw new Error('Neither SAML_IDP_CERT_PATH nor SAML_IDP_CERT is configured.');
-    }
-    return inline.replace(/\\n/g, '\n').trim();
-  }
 
-  private getSaml(): SAML {
-    if (this.samlInstance) return this.samlInstance;
+    const cacheKey = `${config.audience}::${config.certificatePem}`;
+    const cached = this.samlInstances.get(workspaceSlug);
+    if (cached && cached.key === cacheKey) return cached.saml;
 
-    const audience = this.configService.get<string>('SAML_SP_AUDIENCE') ?? 'task-tracker';
-    this.samlInstance = new SAML({
-      callbackUrl: this.configService.get<string>('SAML_ACS_URL'),
-      entryPoint: this.configService.get<string>('SAML_IDP_ENTRY_POINT'),
-      issuer: audience,
-      audience,
-      idpCert: this.loadIdpCertificate(),
+    const saml = new SAML({
+      callbackUrl: this.samlConfig.acsUrlFor(workspaceSlug),
+      entryPoint: config.idpSsoUrl ?? undefined,
+      issuer: config.audience,
+      audience: config.audience,
+      idpCert: config.certificatePem,
 
       // Crate signs the ASSERTION, not the Response. This defaults to true and
       // would reject every valid Crate assertion if left alone.
@@ -94,21 +98,44 @@ export class SamlService {
       validateInResponseTo: 'never',
     } as any);
 
-    return this.samlInstance;
+    this.samlInstances.set(workspaceSlug, { key: cacheKey, saml });
+    this.logger.log(`SAML validator built for workspace "${workspaceSlug}" (audience: ${config.audience})`);
+    return saml;
   }
 
-  /** Validate a base64 SAMLResponse. Throws on any signature/audience/timing failure. */
-  async validateAssertion(samlResponse: string): Promise<SamlProfile> {
+  /**
+   * Validate a base64 SAMLResponse against the certificate trusted by the
+   * workspace named in the ACS URL. Throws on any signature/audience/timing
+   * failure.
+   *
+   * The workspace comes from the URL, not the assertion: choosing the
+   * verification key based on unverified assertion content would let a caller
+   * nominate which key verifies them.
+   */
+  async validateAssertion(workspaceSlug: string, samlResponse: string): Promise<SamlProfile> {
+    const saml = await this.getSaml(workspaceSlug);
+    let profile: SamlProfile;
     try {
-      const { profile } = await this.getSaml().validatePostResponseAsync({
-        SAMLResponse: samlResponse,
-      });
-      if (!profile) throw new Error('No profile returned from assertion');
-      return profile as unknown as SamlProfile;
+      const result = await saml.validatePostResponseAsync({ SAMLResponse: samlResponse });
+      if (!result.profile) throw new Error('No profile returned from assertion');
+      profile = result.profile as unknown as SamlProfile;
     } catch (err: any) {
-      this.logger.warn(`Rejected SAML assertion: ${err?.message}`);
+      this.logger.warn(`Rejected SAML assertion for "${workspaceSlug}": ${err?.message}`);
       throw new UnauthorizedException('Invalid SAML assertion');
     }
+
+    // Defence in depth: the assertion carries its own `workspace` attribute.
+    // It must agree with the endpoint it was sent to, or a valid assertion for
+    // one workspace could be replayed at another workspace's ACS URL.
+    const asserted = String(profile.workspace ?? '').trim();
+    if (asserted && asserted !== workspaceSlug) {
+      this.logger.warn(
+        `Assertion for workspace "${asserted}" was POSTed to the ACS URL for "${workspaceSlug}" - rejected.`,
+      );
+      throw new UnauthorizedException('Assertion workspace does not match this endpoint');
+    }
+
+    return profile;
   }
 
   /**
@@ -116,15 +143,20 @@ export class SamlService {
    * workspace by slug, upserts membership at the asserted role, and mints a
    * Task Tracker session - mirroring validateGoogleUser()'s patterns exactly.
    */
-  async provisionAndLogin(profile: SamlProfile, ipAddress?: string): Promise<ProvisionResult> {
+  async provisionAndLogin(
+    workspaceSlug: string,
+    profile: SamlProfile,
+    ipAddress?: string,
+  ): Promise<ProvisionResult> {
     const email = String(profile.email ?? profile.nameID ?? '').trim().toLowerCase();
     if (!email) throw new BadRequestException('Assertion is missing an email/NameID');
 
     const fullName = String(profile.name ?? '').trim() || email;
-    const slug = String(profile.workspace ?? '').trim();
+    // The slug comes from the ACS URL, which selected the certificate that
+    // verified this assertion - validateAssertion() has already confirmed the
+    // assertion's own `workspace` attribute agrees with it.
+    const slug = workspaceSlug;
     const assertedRole = String(profile.role ?? '').trim();
-
-    if (!slug) throw new BadRequestException('Assertion is missing the workspace attribute');
 
     // Defensive: reject anything outside the SSO-assignable set, Owner included.
     if (!SSO_ASSIGNABLE_ROLES.includes(assertedRole)) {

@@ -95,6 +95,8 @@ model User {
   channelMutes        ChannelMute[]
   projectChatMutes    ProjectChatMute[]
   auditLogs           AuditLog[]
+  // Sprint 20: who last changed the SAML trust configuration.
+  samlConfigUpdates   SamlIdpConfig[]   @relation("SamlConfigUpdatedBy")
 }
 
 model Workspace {
@@ -115,6 +117,8 @@ model Workspace {
   invites         Invite[]
   channels        Channel[]
   auditLogs       AuditLog[]
+  // Sprint 20: this workspace's trusted SAML identity provider, if configured.
+  samlIdpConfig   SamlIdpConfig?
 }
 
 model WorkspaceMember {
@@ -506,4 +510,47 @@ model AuditLog {
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, event])
+}
+
+// ----------------------------------------------------------------------------
+// Sprint 20: SAML SSO trust configuration, scoped PER WORKSPACE.
+//
+// Task Tracker acts as a SAML Service Provider. Sprint 18 read the identity
+// provider's certificate from environment variables, which meant configuring
+// SSO required editing files and restarting the API. This moves the trust
+// config into the database, managed from workspace settings, effective
+// immediately.
+//
+// Per-workspace rather than global because permissions in this app are
+// per-workspace - there is no instance-level admin - so each workspace's owner
+// controls which identity provider may provision into their workspace.
+//
+// This is why the ACS endpoint carries the workspace slug in its path
+// (/auth/saml/acs/:slug): the SP must know which certificate to verify against
+// BEFORE it can trust anything inside the assertion. Reading the workspace from
+// the assertion first would mean trusting unverified data to choose the key
+// that verifies it.
+// ----------------------------------------------------------------------------
+model SamlIdpConfig {
+  id String @id @default(uuid())
+
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // The IdP's public X.509 certificate, PEM. This is the ONLY trust channel:
+  // an assertion is accepted purely because it is signed by this key.
+  certificatePem String
+
+  // The audience this SP identifies as for this workspace. Must match the
+  // <Audience> the IdP asserts, or every assertion is rejected.
+  audience String @default("task-tracker")
+
+  // Informational, parsed from IdP metadata when available. Not used for
+  // validation - IdP-initiated SSO never redirects through the SSO URL.
+  idpEntityId String?
+  idpSsoUrl   String?
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("SamlConfigUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 }

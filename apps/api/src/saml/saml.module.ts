@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { SamlController } from './saml.controller';
+import { SamlConfigController } from './saml-config.controller';
 import { SamlService } from './saml.service';
+import { SamlConfigService } from './saml-config.service';
 import { AuthModule } from '../auth/auth.module';
 
 /**
@@ -11,8 +13,8 @@ import { AuthModule } from '../auth/auth.module';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [SamlController],
-  providers: [SamlService],
-  exports: [SamlService],
+  controllers: [SamlController, SamlConfigController],
+  providers: [SamlService, SamlConfigService],
+  exports: [SamlService, SamlConfigService],
 })
 export class SamlModule {}

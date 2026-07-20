@@ -136,7 +136,14 @@ export class ChatService {
       };
     }));
 
-    return result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    // Drop conversations whose other participant no longer resolves. Deleting a
+    // User cascades away their ChannelMember row but leaves the DM Channel
+    // behind, so a one-sided channel survives - and every consumer of this list
+    // reasonably assumes otherParticipant exists. Filtering here keeps that
+    // assumption true rather than pushing the null check onto every caller.
+    return result
+      .filter((conversation) => Boolean(conversation.otherParticipant))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }
 
   async getChannelUnreadCount(userId: string, channelId: string, projectId: string, lastReadDate?: Date) {

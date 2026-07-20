@@ -15,6 +15,7 @@ describe('SamlService — JIT provisioning', () => {
   let authService: any;
   let auditLogService: any;
   let configService: any;
+  let samlConfig: any;
   let service: SamlService;
 
   const baseProfile = {
@@ -46,14 +47,17 @@ describe('SamlService — JIT provisioning', () => {
     };
     auditLogService = { log: jest.fn().mockResolvedValue(undefined) };
     configService = { get: jest.fn().mockReturnValue('task-tracker') };
+    // provisionAndLogin never touches the trust config (that happens earlier,
+    // in validateAssertion), so a bare stub is enough here.
+    samlConfig = { resolve: jest.fn().mockResolvedValue(null) };
 
-    service = new SamlService(prisma, authService, auditLogService, configService);
+    service = new SamlService(prisma, authService, auditLogService, configService, samlConfig);
   });
 
   it('creates the user AND the membership for a brand-new email (the demo moment)', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
-    const result = await service.provisionAndLogin(baseProfile, '1.2.3.4');
+    const result = await service.provisionAndLogin('engineering', baseProfile, '1.2.3.4');
 
     expect(prisma.user.create).toHaveBeenCalled();
     expect(prisma.workspaceMember.create).toHaveBeenCalledWith({
@@ -68,7 +72,7 @@ describe('SamlService — JIT provisioning', () => {
   it('overwrites the role when an existing member is at a different role', async () => {
     prisma.workspaceMember.findUnique.mockResolvedValue({ id: 'wm-1', role: Role.Viewer });
 
-    await service.provisionAndLogin(baseProfile);
+    await service.provisionAndLogin('engineering', baseProfile);
 
     expect(prisma.workspaceMember.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { role: Role.Member } }),
@@ -81,7 +85,7 @@ describe('SamlService — JIT provisioning', () => {
   it('does not write when the member is already at the asserted role', async () => {
     prisma.workspaceMember.findUnique.mockResolvedValue({ id: 'wm-1', role: Role.Member });
 
-    await service.provisionAndLogin(baseProfile);
+    await service.provisionAndLogin('engineering', baseProfile);
 
     expect(prisma.workspaceMember.update).not.toHaveBeenCalled();
     expect(prisma.workspaceMember.create).not.toHaveBeenCalled();
@@ -90,7 +94,7 @@ describe('SamlService — JIT provisioning', () => {
   it('NEVER demotes an existing Owner, but still logs them in', async () => {
     prisma.workspaceMember.findUnique.mockResolvedValue({ id: 'wm-1', role: Role.Owner });
 
-    const result = await service.provisionAndLogin(baseProfile);
+    const result = await service.provisionAndLogin('engineering', baseProfile);
 
     expect(prisma.workspaceMember.update).not.toHaveBeenCalled();
     expect(auditLogService.log).not.toHaveBeenCalledWith(
@@ -101,14 +105,14 @@ describe('SamlService — JIT provisioning', () => {
 
   it('rejects an asserted role of Owner', async () => {
     await expect(
-      service.provisionAndLogin({ ...baseProfile, role: 'Owner' }),
+      service.provisionAndLogin('engineering', { ...baseProfile, role: 'Owner' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.workspaceMember.create).not.toHaveBeenCalled();
   });
 
   it('rejects a role outside Admin/Member/Viewer', async () => {
     await expect(
-      service.provisionAndLogin({ ...baseProfile, role: 'Superuser' }),
+      service.provisionAndLogin('engineering', { ...baseProfile, role: 'Superuser' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -116,19 +120,28 @@ describe('SamlService — JIT provisioning', () => {
     prisma.workspace.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.provisionAndLogin({ ...baseProfile, workspace: 'does-not-exist' }),
+      service.provisionAndLogin('does-not-exist', baseProfile),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.workspaceMember.create).not.toHaveBeenCalled();
   });
 
+  it('provisions into the workspace from the ACS URL, not the assertion attribute', async () => {
+    // The slug argument comes from the URL that selected the verifying
+    // certificate. validateAssertion() has already rejected any assertion whose
+    // own `workspace` attribute disagrees, so the argument is authoritative.
+    await service.provisionAndLogin('engineering', { ...baseProfile, workspace: 'engineering' });
+
+    expect(prisma.workspace.findUnique).toHaveBeenCalledWith({ where: { slug: 'engineering' } });
+  });
+
   it('rejects an assertion with no email/NameID', async () => {
     await expect(
-      service.provisionAndLogin({ ...baseProfile, email: undefined, nameID: undefined }),
+      service.provisionAndLogin('engineering', { ...baseProfile, email: undefined, nameID: undefined }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('lowercases the email before lookup', async () => {
-    await service.provisionAndLogin({ ...baseProfile, email: 'JANE@CORP.COM' });
+    await service.provisionAndLogin('engineering', { ...baseProfile, email: 'JANE@CORP.COM' });
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: 'jane@corp.com' },
@@ -136,7 +149,7 @@ describe('SamlService — JIT provisioning', () => {
   });
 
   it('mints a session and stores a hashed refresh token', async () => {
-    await service.provisionAndLogin(baseProfile);
+    await service.provisionAndLogin('engineering', baseProfile);
 
     expect(authService.generateTokens).toHaveBeenCalledWith(USER.id, USER.email);
     // refreshToken persisted must be the bcrypt hash, never the raw token

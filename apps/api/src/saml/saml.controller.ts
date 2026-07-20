@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Param,
   Post,
   Req,
   Res,
@@ -47,8 +48,9 @@ export class SamlController {
   @ApiResponse({ status: 400, description: 'Unknown workspace slug, or a role not assignable via SSO' })
   @ApiResponse({ status: 401, description: 'Invalid or untrusted SAML assertion' })
   @ApiExcludeEndpoint(false)
-  @Post('acs')
+  @Post('acs/:slug')
   async acs(
+    @Param('slug') slug: string,
     @Req() req: Request,
     @Res() res: Response,
     @Body() body: Record<string, any>,
@@ -58,12 +60,16 @@ export class SamlController {
       throw new BadRequestException('Missing SAMLResponse');
     }
 
-    // Signature/audience/timing validation. Throws 401 on any failure - we never
+    // The workspace comes from the URL, which selects the certificate to verify
+    // against. Reading it from the assertion first would mean trusting
+    // unverified data to choose the key that verifies it.
+    //
+    // Signature/audience/timing validation throws 401 on any failure - we never
     // fall through to provisioning on an unverified assertion.
-    const profile = await this.samlService.validateAssertion(samlResponse);
+    const profile = await this.samlService.validateAssertion(slug, samlResponse);
 
     const { accessToken, refreshToken, workspaceSlug } =
-      await this.samlService.provisionAndLogin(profile, req.ip);
+      await this.samlService.provisionAndLogin(slug, profile, req.ip);
 
     this.setRefreshCookie(res, refreshToken);
 
